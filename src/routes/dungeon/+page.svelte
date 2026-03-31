@@ -738,7 +738,7 @@
 <style>
     .donjon {
         color: #eee;
-        font-family: monospace;
+        font-family: var(--font);
     }
 
     /* ── Lobby ── */
@@ -770,7 +770,7 @@
         background: #e94560; color: white; border: none;
         border-radius: 6px; padding: 12px;
         cursor: pointer; font-size: 0.9rem; font-weight: bold;
-        width: 100%; margin-top: 4px; font-family: monospace;
+        width: 100%; margin-top: 4px; font-family: var(--font);
     }
 
     /* ── Combat ── */
@@ -817,7 +817,7 @@
     .btn-action {
         flex: 1; min-width: 90px; border: none;
         border-radius: 6px; padding: 10px 6px;
-        cursor: pointer; font-size: 0.75rem; font-weight: bold; font-family: monospace;
+        cursor: pointer; font-size: 0.75rem; font-weight: bold; font-family: var(--font);
     }
     .btn-action.attaque    { background: #e94560; color: white; }
     .btn-action.competence { background: #0f3460; color: #eee; border: 1px solid #555; }
@@ -842,12 +842,12 @@
     .btn-vendre {
         background: #f39c12; color: #111; border: none;
         border-radius: 4px; padding: 3px 8px;
-        cursor: pointer; font-size: 0.72rem; font-weight: bold; font-family: monospace;
+        cursor: pointer; font-size: 0.72rem; font-weight: bold; font-family: var(--font);
     }
     .btn-vendre-tout {
         background: #e67e22; color: white; border: none;
         border-radius: 4px; padding: 6px 12px;
-        cursor: pointer; font-size: 0.78rem; font-family: monospace;
+        cursor: pointer; font-size: 0.78rem; font-family: var(--font);
         align-self: flex-start;
     }
     .mini-shop-item {
@@ -859,7 +859,7 @@
     .btn-soin {
         background: #27ae60; color: white; border: none;
         border-radius: 4px; padding: 6px 10px;
-        cursor: pointer; font-size: 0.78rem; font-weight: bold; font-family: monospace; flex-shrink: 0;
+        cursor: pointer; font-size: 0.78rem; font-weight: bold; font-family: var(--font); flex-shrink: 0;
     }
     .btn-soin:disabled { background: #555; color: #888; cursor: not-allowed; }
 
@@ -876,7 +876,7 @@
         animation: pulse 1.5s infinite;
     }
     .coffre-icone { font-size: 3.5rem; }
-    .coffre-txt   { font-size: 0.9rem; color: #f39c12; font-family: monospace; }
+    .coffre-txt   { font-size: 0.9rem; color: #f39c12; font-family: var(--font); }
     @keyframes pulse {
         0%, 100% { transform: scale(1); }
         50%       { transform: scale(1.06); }
@@ -897,7 +897,7 @@
         display: flex; flex-direction: column; gap: 4px;
         background: #1a1a3e; border: 2px solid #555;
         border-radius: 10px; padding: 14px 16px;
-        cursor: pointer; text-align: left; font-family: monospace;
+        cursor: pointer; text-align: left; font-family: var(--font);
         width: 100%; transition: transform 0.1s, background 0.15s;
         animation: fadeIn 0.3s ease;
     }
@@ -919,13 +919,13 @@
     .btn-recommencer {
         background: #333; color: #aaa; border: 1px solid #555;
         border-radius: 6px; padding: 8px;
-        cursor: pointer; font-size: 0.78rem; font-family: monospace;
+        cursor: pointer; font-size: 0.78rem; font-family: var(--font);
         width: 100%; text-align: center;
     }
     .btn-quitter {
         background: none; color: #888; border: 1px solid #444;
         border-radius: 6px; padding: 8px;
-        cursor: pointer; font-size: 0.75rem; font-family: monospace;
+        cursor: pointer; font-size: 0.75rem; font-family: var(--font);
         width: 100%; text-align: center;
         margin-top: 2px;
     }
@@ -955,7 +955,7 @@
         display: flex; flex-direction: column; gap: 4px;
         background: #1a1a3e; border: 2px solid #555;
         border-radius: 10px; padding: 14px 16px;
-        cursor: pointer; text-align: left; font-family: monospace;
+        cursor: pointer; text-align: left; font-family: var(--font);
         transition: border-color 0.2s, transform 0.1s;
     }
     .gacha-carte:hover { transform: translateY(-2px); }
@@ -968,7 +968,7 @@
         background: #9b59b6; color: white; border: none;
         border-radius: 6px; padding: 12px;
         cursor: pointer; font-size: 0.9rem; font-weight: bold;
-        width: 100%; font-family: monospace; margin-top: 4px;
+        width: 100%; font-family: var(--font); margin-top: 4px;
         animation: pulse 1.5s infinite;
     }
 

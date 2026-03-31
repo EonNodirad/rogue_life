@@ -2,7 +2,7 @@
 
 ## Contexte
 
-**Rogue Life** est une application mobile gamifiée (RPG) qui permet de suivre des données de vie réelle (tâches accomplies, poids, activités) en les transformant en quêtes et récompenses RPG.
+**Rogue Life** est une application mobile gamifiée (RPG) qui permet de suivre des données de vie réelle (tâches accomplies, activités) en les transformant en quêtes et récompenses RPG.
 
 Stack : **Tauri 2** (Rust) + **SvelteKit 2** (TypeScript) + **SQLite**
 
@@ -83,35 +83,75 @@ Stack : **Tauri 2** (Rust) + **SvelteKit 2** (TypeScript) + **SQLite**
 
 ## Étape 7 — Système de Level Up
 
-**Statut : [ ] À faire**
+**Statut : [x] Fait**
 
-**Fichier :** `src/lib/game.ts` (à créer), `src/routes/tasks/+page.svelte`, `src/routes/+page.svelte`
-
-- [ ] Fonction `checkLevelUp(personnage_id)` :
-  - Comparer XP actuelle au seuil `exp_max_requise` du niveau suivant (`level` table)
-  - Si atteint : incrémenter `level_id` du personnage, recalculer stats de base
-  - Boucler si plusieurs niveaux d'un coup
-- [ ] Appel automatique après tout gain d'XP (complétion de tâche, victoire donjon)
-- [ ] Recalcul des stats à chaque level up :
-  - `pv_vie_max += 10`, `pv_combat_max += 8`, `attq += 2`, `def += 2`, `attq_spe += 2`, `def_spe += 2`, `vitesse += 1`
-- [ ] Notification visuelle (toast "LEVEL UP !" avec nouveau niveau)
-- [ ] Mise à jour du header après level up
+- [x] `checkLevelUp(personnage_id)` : compare XP au seuil, incrémente `level_id`, boucle si plusieurs niveaux
+- [x] Appel automatique après tout gain d'XP (tâche, routine, donjon)
+- [x] Stats recalculées à chaque level up (+PV, +ATQ, +DEF, +VIT)
+- [x] Points de stat à distribuer manuellement (section level up sur profil)
+- [x] Toast "LEVEL UP !" avec nombre de points gagnés
+- [x] Header mis à jour après level up
 
 ---
 
-## Étape 8 
+## Étape 8 — Inventaire, Loot & Équilibrage
 
+**Statut : [x] Fait**
+
+- [x] Page Sacoche (`/inventory`) : équipement actif, inventaire (armes/armures/consommables), compétences
+- [x] Filtres dépliables dans la boutique (slot, rareté) et filtre élément sur l'onglet compétences
+- [x] Filtres dépliables dans la sacoche (catégorie, rareté, élément)
+- [x] Loot box routines : coffre quotidien quand toutes les routines sont faites, rareté selon compteur
+- [x] Progression rareté donjon : peu_commun→rare→épique en boucle, légendaire tous les 50 étages
+- [x] Tables de probabilités par rareté de coffre (`src/lib/loot.ts`)
+- [x] Items `utilitaire` exclus des loot boxes
 
 ---
 
-## Étape 9 — Polish et tests
+## Étape 9 — Économie, Game Over & Qualité de vie
 
-**Statut : [ ] À faire**
+**Statut : [x] Fait**
 
-- [ ] Thème RPG cohérent (palette, polices, icônes)
-- [ ] Animations gains XP/or (compteur animé, flash)
-- [ ] Gestion erreurs DB (messages utilisateur)
-- [ ] Test complet sur émulateur mobile (Tauri mobile ou PWA)
+- [x] Achat d'items en doublons (`ON CONFLICT ... DO UPDATE SET quantite = quantite + 1`)
+- [x] Vente d'items depuis la sacoche (25% du prix de base)
+- [x] Achat de stats avec de l'or (boutique des stats sur le profil)
+- [x] Équilibrage initial : `attq = attq_spe = 10`, `def = def_spe = 8`
+- [x] Game Over quand PV IRL = 0 : reset niveau/XP/or/stats, conservation inventaire/compétences
+- [x] Modal Game Over + bouton "Recommencer"
+- [x] Date limite des tâches : date picker au lieu de "nombre de jours"
+
+---
+
+## Étape 10 — Modes de jeu
+
+**Statut : [x] Fait**
+
+- [x] Type `GameMode = 'normal' | 'hard' | 'cauchemar'`
+- [x] `getModeMultiplier` : gains ×1 / ×1.5 / ×2 selon le mode
+- [x] Mode Hard : pas de récup PV IRL, pas d'utilitaires, coffre rare/7j + épique/mois
+- [x] Mode Cauchemar : une erreur = Game Over immédiat, coffre épique/7j + légendaire/mois
+- [x] Règle des 3 jours : annulation vers normal bloquée avant 3j (hard↔cauchemar libre)
+- [x] `changerMode` et `checkModeCoffres` dans `db.ts`
+- [x] Migration `0013_modes.sql` : colonnes `mode`, `mode_debut`, `dernier_coffre_hebdo/mensuel`
+- [x] UI sélection de mode sur le profil avec modal de confirmation
+- [x] Badge coloré dans le header (🔥 HARD / 💀 CAUCHEMAR)
+- [x] Game Over en mode danger → reset vers Normal automatique
+- [x] Boutique : onglet utilitaires masqué en hard/cauchemar
+- [x] Coffres hebdo/mensuel affichés via modal loot sur la page tâches
+
+---
+
+## Étape 11 — Polish & UX
+
+**Statut : [ ] En cours**
+
+- [ ] Thème RPG cohérent (palette, polices, icônes unifiées)
+- [ ] Animations gains XP/or (compteur animé, flash visuel)
+- [ ] Page de stats/historique : graphiques ou résumés de progression
+- [ ] Onboarding : écran de création de personnage (nom, classe) au premier lancement
+- [ ] Retours haptiques / sonores (Tauri)
+- [ ] Test complet sur mobile (Tauri Android/iOS ou émulateur)
+- [ ] Gestion d'erreurs DB : messages utilisateur clairs
 
 ---
 
@@ -119,14 +159,16 @@ Stack : **Tauri 2** (Rust) + **SvelteKit 2** (TypeScript) + **SQLite**
 
 | Fichier | Rôle |
 |---------|------|
-| `src-tauri/src/lib.rs` | Migrations Tauri (versions 1-9) |
-| `src-tauri/migrations/` | Migrations SQL (0001→0009) |
-| `src/lib/db.ts` | Fonctions d'accès DB |
+| `src-tauri/src/lib.rs` | Migrations Tauri (versions 1–13) |
+| `src-tauri/migrations/` | Migrations SQL (0001 → 0013) |
+| `src/lib/db.ts` | Fonctions d'accès DB + logique métier |
 | `src/lib/types.ts` | Types TypeScript |
 | `src/lib/stores.ts` | Store Svelte partagé (characterStore) |
 | `src/lib/combat.ts` | Moteur de combat pur TS |
-| `src/routes/+layout.svelte` | Header dynamique + navigation |
-| `src/routes/+page.svelte` | Page profil |
-| `src/routes/tasks/+page.svelte` | Page tâches |
-| `src/routes/shop/+page.svelte` | Page boutique + compétences |
-| `src/routes/dungeon/+page.svelte` | Page donjon roguelike |
+| `src/lib/loot.ts` | Tables de probabilités et génération de loot |
+| `src/routes/+layout.svelte` | Header dynamique + navigation + badge mode |
+| `src/routes/+page.svelte` | Profil, stats, boutique stats, mode de jeu |
+| `src/routes/tasks/+page.svelte` | Tâches, routines, coffres de mode |
+| `src/routes/shop/+page.svelte` | Boutique + compétences |
+| `src/routes/dungeon/+page.svelte` | Donjon roguelike |
+| `src/routes/inventory/+page.svelte` | Sacoche (inventaire + vente) |

@@ -1,0 +1,109 @@
+@import '@fontsource/press-start-2p/400.css';
+@import '@fontsource/medievalsharp/400.css';
+
+:root {
+    --bg:         #16213e;
+    --bg-card:    #1a1a2e;
+    --bg-header:  #0f3460;
+    --accent:     #e94560;
+    --gold:       #f39c12;
+    --success:    #2ecc71;
+    --danger:     #e74c3c;
+    --warning:    #e67e22;
+    --text:       #eee;
+    --text-muted: #aaa;
+    --radius:     0px;
+    --radius-lg:  0px;
+    --font:       'Press Start 2P', monospace;
+    --font-scroll:'MedievalSharp', serif;
+
+    /* Bordure pixel double (style NES dialog box) */
+    --px-border-color:  #eee;
+    --px-border-size:   3px;
+    --px-gap:           3px;
+    --px-border: var(--px-border-size) solid var(--px-border-color);
+    --px-shadow: 0 0 0 var(--px-gap) var(--bg-card),
+                 0 0 0 calc(var(--px-gap) + var(--px-border-size)) var(--px-border-color);
+
+    /* Variante accentuée (pour modales, level-up...) */
+    --px-shadow-accent: 0 0 0 var(--px-gap) var(--bg-card),
+                        0 0 0 calc(var(--px-gap) + var(--px-border-size)) var(--accent);
+    --px-shadow-gold:   0 0 0 var(--px-gap) var(--bg-card),
+                        0 0 0 calc(var(--px-gap) + var(--px-border-size)) var(--gold);
+    --px-shadow-danger: 0 0 0 var(--px-gap) var(--bg-card),
+                        0 0 0 calc(var(--px-gap) + var(--px-border-size)) var(--danger);
+}
+
+*, *::before, *::after {
+    box-sizing: border-box;
+    border-radius: 0 !important; /* Pixel art — pas d'arrondi */
+}
+
+/* Classe utilitaire : cadre pixel standard */
+.px-frame {
+    border: var(--px-border);
+    box-shadow: var(--px-shadow);
+}
+.px-frame-accent {
+    border: var(--px-border-size) solid var(--accent);
+    box-shadow: var(--px-shadow-accent);
+}
+.px-frame-gold {
+    border: var(--px-border-size) solid var(--gold);
+    box-shadow: var(--px-shadow-gold);
+}
+.px-frame-danger {
+    border: var(--px-border-size) solid var(--danger);
+    box-shadow: var(--px-shadow-danger);
+}
+
+html, body {
+    margin: 0;
+    padding: 0;
+    background-color: var(--bg);
+    color: var(--text);
+    font-family: var(--font);
+    font-size: 12px; /* Press Start 2P — base réduite vs 16px par défaut */
+    overflow: hidden;
+}
+
+/* Utilitaires toast / notification style parchemin */
+.toast-parchemin {
+    font-family: var(--font-scroll);
+    background: linear-gradient(135deg, #c8a96e, #e8d5a3, #c8a96e);
+    color: #2c1810;
+    border: 2px solid #8b6914;
+    border-radius: 4px;
+    padding: 12px 18px;
+    box-shadow: 0 4px 16px rgba(0,0,0,0.6), inset 0 1px 0 rgba(255,255,255,0.3);
+    position: relative;
+    animation: parchemin-derouler 0.5s cubic-bezier(0.23, 1, 0.32, 1);
+    transform-origin: top center;
+}
+
+@keyframes parchemin-derouler {
+    0%   { transform: scaleY(0.1); opacity: 0; }
+    60%  { transform: scaleY(1.05); opacity: 1; }
+    100% { transform: scaleY(1);    opacity: 1; }
+}
+
+/* Variante : notification fixe en haut */
+.notif-parchemin {
+    font-family: var(--font-scroll);
+    font-size: 1.1rem;
+    background: linear-gradient(135deg, #c8a96e, #e8d5a3, #c8a96e);
+    color: #2c1810;
+    border: 2px solid #8b6914;
+    border-radius: 4px;
+    padding: 10px 20px;
+    box-shadow: 0 4px 20px rgba(0,0,0,0.7);
+    text-align: center;
+    position: fixed;
+    top: 64px;
+    left: 50%;
+    transform: translateX(-50%);
+    z-index: 90;
+    max-width: 340px;
+    width: 90%;
+    animation: parchemin-derouler 0.5s cubic-bezier(0.23, 1, 0.32, 1);
+}

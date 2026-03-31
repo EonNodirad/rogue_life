@@ -200,19 +200,34 @@
     </div>
 
     <div class="stat-grid">
-        {#each [
-            { label: 'ATQ',     base: carac.attq,     bonus: bonusTotal.attq     },
-            { label: 'ATQ SPE', base: carac.attq_spe, bonus: bonusTotal.attq_spe },
-            { label: 'DEF',     base: carac.def,      bonus: bonusTotal.def      },
-            { label: 'DEF SPE', base: carac.def_spe,  bonus: bonusTotal.def_spe  },
-            { label: 'VIT',     base: carac.vitesse,  bonus: bonusTotal.vitesse  },
-        ] as s}
-        <div class="stat-row">
-            <span class="stat-label">{s.label}</span>
-            <span class="stat-val">{s.base + s.bonus}</span>
-            {#if s.bonus > 0}<span class="stat-bonus">+{s.bonus}</span>{/if}
+        <div class="stat-ligne">
+            {#each [
+                { label: 'ATQ',     base: carac.attq,     bonus: bonusTotal.attq     },
+                { label: 'ATQ SPÉ', base: carac.attq_spe, bonus: bonusTotal.attq_spe },
+            ] as s}
+            <div class="stat-cell">
+                <span class="stat-label">{s.label}</span>
+                <span class="stat-val">{s.base + s.bonus}{#if s.bonus > 0}<span class="stat-bonus"> +{s.bonus}</span>{/if}</span>
+            </div>
+            {/each}
         </div>
-        {/each}
+        <div class="stat-ligne">
+            {#each [
+                { label: 'DEF',     base: carac.def,     bonus: bonusTotal.def     },
+                { label: 'DEF SPÉ', base: carac.def_spe, bonus: bonusTotal.def_spe },
+            ] as s}
+            <div class="stat-cell">
+                <span class="stat-label">{s.label}</span>
+                <span class="stat-val">{s.base + s.bonus}{#if s.bonus > 0}<span class="stat-bonus"> +{s.bonus}</span>{/if}</span>
+            </div>
+            {/each}
+        </div>
+        <div class="stat-ligne">
+            <div class="stat-cell">
+                <span class="stat-label">VIT</span>
+                <span class="stat-val">{carac.vitesse + bonusTotal.vitesse}{#if bonusTotal.vitesse > 0}<span class="stat-bonus"> +{bonusTotal.vitesse}</span>{/if}</span>
+            </div>
+        </div>
     </div>
 
     {#if equipements.length > 0}
@@ -275,7 +290,7 @@
     color: #eee;
     min-height: 100vh;
     padding: 16px;
-    font-family: monospace;
+    font-family: var(--font);
   }
   .perso {
     display: flex;
@@ -369,7 +384,7 @@
     display: flex; flex-direction: column; align-items: center;
     background: #0f3460; border: 1px solid #f39c12;
     border-radius: 8px; padding: 8px 4px;
-    cursor: pointer; font-family: monospace;
+    cursor: pointer; font-family: var(--font);
     transition: background 0.15s;
   }
   .btn-allouer:hover { background: #1a4a80; }
@@ -380,17 +395,21 @@
     margin-bottom: 20px;
     display: flex;
     flex-direction: column;
-    gap: 4px;
-  }
-  .stat-row {
-    display: flex;
-    align-items: center;
     gap: 8px;
-    font-size: 0.85rem;
   }
-  .stat-label { color: #aaa; width: 60px; }
-  .stat-val   { font-weight: bold; }
-  .stat-bonus { color: #2ecc71; font-size: 0.78rem; }
+  .stat-ligne {
+    display: flex;
+    gap: 16px;
+  }
+  .stat-cell {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    min-width: 80px;
+  }
+  .stat-label { color: #aaa; font-size: 0.72rem; }
+  .stat-val   { font-weight: bold; font-size: 0.9rem; }
+  .stat-bonus { color: #2ecc71; font-size: 0.72rem; }
 
   .stat-shop {
     background: #1a1a2e; border: 1px solid #555;
@@ -422,7 +441,7 @@
     display: flex; flex-direction: column; align-items: center; justify-content: center;
     background: #0f3460; border: 1px solid #555;
     border-radius: 8px; padding: 8px 4px; gap: 4px;
-    cursor: pointer; font-family: monospace; transition: background 0.15s;
+    cursor: pointer; font-family: var(--font); transition: background 0.15s;
   }
   .btn-mode:hover { background: #1a4a80; }
   .mode-nom { font-size: 0.82rem; color: #eee; }
@@ -440,7 +459,7 @@
   .cancel-btn {
     background: #333; color: #eee; border: 1px solid #555;
     border-radius: 8px; padding: 10px 20px;
-    font-size: 0.9rem; cursor: pointer; font-family: monospace;
+    font-size: 0.9rem; cursor: pointer; font-family: var(--font);
   }
   .cancel-btn:hover { background: #444; }
 
@@ -468,7 +487,7 @@
     background: #e74c3c; color: white; border: none;
     border-radius: 8px; padding: 10px 20px;
     font-size: 1rem; font-weight: bold; cursor: pointer;
-    font-family: monospace; margin-top: 4px;
+    font-family: var(--font); margin-top: 4px;
   }
   .gameover-btn:hover { background: #c0392b; }
 </style>

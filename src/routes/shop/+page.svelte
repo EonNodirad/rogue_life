@@ -131,10 +131,7 @@
         });
     }
 
-    function possede(stuff_id: number) {
-        return inventaireItems.some(i => i.stuff_id === stuff_id);
-    }
-    function possedeComp(comp_id: number) {
+function possedeComp(comp_id: number) {
         return mesCompetences.some(c => c.competence_id === comp_id);
     }
 
@@ -405,7 +402,7 @@
 </div>
 
 <style>
-    .shop { color: #eee; font-family: monospace; }
+    .shop { color: #eee; font-family: var(--font); }
 
     .onglets {
         display: flex;
@@ -420,7 +417,7 @@
         border-radius: 6px;
         padding: 8px 2px;
         cursor: pointer;
-        font-size: 0.72rem;
+        font-size: 0.8rem;
         transition: all 0.15s;
     }
     .onglets button.actif {
@@ -432,7 +429,7 @@
     .btn-filtres {
         background: #0f3460; color: #aaa; border: 1px solid #333;
         border-radius: 6px; padding: 5px 14px; cursor: pointer;
-        font-size: 0.78rem; font-family: monospace; margin-bottom: 6px;
+        font-size: 0.85rem; font-family: var(--font); margin-bottom: 6px;
     }
     .btn-filtres:hover { color: #eee; }
 
@@ -446,7 +443,7 @@
     }
 
     .filtre-label {
-        font-size: 0.68rem; color: #666; align-self: center; margin-right: 2px;
+        font-size: 0.75rem; color: #666; align-self: center; margin-right: 2px;
     }
 
     .filtres {
@@ -463,9 +460,9 @@
         border-radius: 12px;
         padding: 3px 10px;
         cursor: pointer;
-        font-size: 0.7rem;
+        font-size: 0.78rem;
         transition: all 0.15s;
-        font-family: monospace;
+        font-family: var(--font);
     }
     .pill.actif {
         background: #0f3460;

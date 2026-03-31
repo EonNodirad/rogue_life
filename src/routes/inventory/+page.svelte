@@ -248,7 +248,7 @@
 <style>
   .sacoche {
     color: #eee;
-    font-family: monospace;
+    font-family: var(--font);
     padding-bottom: 20px;
   }
   h2 { font-size: 1.3rem; margin-bottom: 16px; }
@@ -261,7 +261,7 @@
   .filtre-groupe { display: flex; flex-wrap: wrap; gap: 4px; align-items: center; margin-bottom: 4px; }
   .filtre-label { font-size: 0.68rem; color: #555; margin-right: 2px; }
   .pill {
-    padding: 4px 10px; border-radius: 12px; font-size: 0.72rem; font-family: monospace;
+    padding: 4px 10px; border-radius: 12px; font-size: 0.72rem; font-family: var(--font);
     border: 1px solid #444; background: transparent; color: #aaa; cursor: pointer;
   }
   .pill.active { background: #e94560; border-color: #e94560; color: white; }
@@ -269,7 +269,7 @@
   .section-header { display: flex; align-items: center; justify-content: space-between; }
   .section-header h3 { margin-bottom: 0; border-bottom: none; }
   .btn-filtres-comp {
-    font-size: 0.72rem; font-family: monospace; background: #0f3460;
+    font-size: 0.72rem; font-family: var(--font); background: #0f3460;
     border: 1px solid #333; border-radius: 6px; color: #aaa;
     padding: 3px 10px; cursor: pointer; margin-bottom: 4px;
   }
@@ -290,13 +290,13 @@
 
   .item-actions { display: flex; flex-direction: column; gap: 4px; align-items: flex-end; flex-shrink: 0; }
   .btn-vendre {
-    padding: 3px 8px; border-radius: 6px; font-size: 0.7rem; font-family: monospace;
+    padding: 3px 8px; border-radius: 6px; font-size: 0.7rem; font-family: var(--font);
     border: 1px solid #e67e22; background: transparent; color: #e67e22; cursor: pointer;
     white-space: nowrap;
   }
   .btn-vendre:hover { background: rgba(230,126,34,0.15); }
   .btn-action {
-    padding: 5px 12px; border-radius: 6px; font-size: 0.78rem; font-family: monospace;
+    padding: 5px 12px; border-radius: 6px; font-size: 0.78rem; font-family: var(--font);
     border: 1px solid #2ecc71; background: transparent; color: #2ecc71; cursor: pointer;
     white-space: nowrap; flex-shrink: 0;
   }

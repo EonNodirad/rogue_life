@@ -3,7 +3,7 @@
     import { getTaches, createTache, completerTache, echouerTache, completerRoutine, getHistoriqueActivite, ROUTINE_STATS, checkLevelUp, incrementerCompteurRoutines, getStuffs, getCompetencesDonjon, getPersonnageCompetences, ajouterRecompenseDonjon, checkModeCoffres } from '$lib/db';
     import { refreshCharacterStore } from '$lib/stores';
     import type { tache, historique_activite, Rarete } from '$lib/types';
-    import { piocherLoot, RARETE_ORDER } from '$lib/loot';
+    import { piocherLoot } from '$lib/loot';
     import type { LootOption } from '$lib/loot';
 
     let toastLevelUp = $state('');
@@ -59,7 +59,7 @@
         // Routines faites aujourd'hui
         routinesFaitesAujourdhui = new Set(
             historique
-                .filter(h => h.statut === 'succes' && h.date_action?.slice(0, 10) === today)
+                .filter(h => h.statut === 'succes' && new Date(h.date_action).toISOString().slice(0, 10) === today)
                 .map(h => h.tache_id)
         );
     }
@@ -363,7 +363,7 @@
 {/if}
 
 <style>
-    .tasks { color: #eee; font-family: monospace; }
+    .tasks { color: #eee; font-family: var(--font); }
 
     .section-header {
         display: flex;
@@ -483,7 +483,7 @@
     .gameover-btn {
         background: #e74c3c; color: white; border: none;
         border-radius: 8px; padding: 10px 20px;
-        font-size: 1rem; font-weight: bold; cursor: pointer; font-family: monospace;
+        font-size: 1rem; font-weight: bold; cursor: pointer; font-family: var(--font);
     }
     .gameover-btn:hover { background: #c0392b; }
 
@@ -505,7 +505,7 @@
         background: #0f3460; border: 2px solid; border-radius: 10px;
         padding: 12px 14px; cursor: pointer; text-align: left;
         display: flex; flex-direction: column; gap: 4px;
-        transition: background 0.15s; font-family: monospace;
+        transition: background 0.15s; font-family: var(--font);
     }
     .loot-carte:hover:not(:disabled) { background: #1a4a80; }
     .loot-carte:disabled { opacity: 0.6; cursor: default; }

@@ -865,3 +865,34 @@ export async function checkModeCoffres(personnage_id: number): Promise<{ hebdo: 
     }
     return { hebdo, mensuel };
 }
+
+// --- Onboarding & Stats ---
+export async function renommerPersonnage(personnage_id: number, nom: string): Promise<void> {
+    const db = await getDb();
+    await db.execute('UPDATE personnage SET nom = $1 WHERE id = $2', [nom.trim(), personnage_id]);
+}
+
+export async function getStatsResume(personnage_id: number): Promise<{
+    taches_succes: number;
+    taches_echec: number;
+    routines_faites: number;
+    penalites: number;
+}> {
+    const db = await getDb();
+    const rows = await db.select<{ statut: string; type_tache: string | null; cnt: number }[]>(
+        `SELECT h.statut, t.type as type_tache, COUNT(*) as cnt
+         FROM historique_activite h
+         LEFT JOIN tache t ON t.id = h.tache_id
+         WHERE h.personnage_id = $1
+         GROUP BY h.statut, t.type`,
+        [personnage_id]
+    );
+    let taches_succes = 0, taches_echec = 0, routines_faites = 0, penalites = 0;
+    for (const r of rows) {
+        if (r.statut === 'succes' && r.type_tache === 'routine') routines_faites += r.cnt;
+        else if (r.statut === 'succes') taches_succes += r.cnt;
+        else if (r.statut === 'echec')  taches_echec  += r.cnt;
+        else if (r.statut === 'penalite') penalites   += r.cnt;
+    }
+    return { taches_succes, taches_echec, routines_faites, penalites };
+}
