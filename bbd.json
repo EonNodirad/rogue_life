@@ -1,0 +1,141 @@
+{
+  "database": {
+    "name": "rpg_gamification_db",
+    "tables": [
+      {
+        "name": "caracteristique",
+        "description": "Statistiques partagées entre les personnages et les monstres",
+        "columns": [
+          { "name": "id", "type": "INT", "is_primary_key": true },
+          { "name": "attq", "type": "INT" },
+          { "name": "attq_spe", "type": "INT" },
+          { "name": "def", "type": "INT" },
+          { "name": "def_spe", "type": "INT" },
+          { "name": "vitesse", "type": "INT" }
+        ]
+      },
+      {
+        "name": "level",
+        "description": "Table de référence pour les paliers de niveaux",
+        "columns": [
+          { "name": "id", "type": "INT", "is_primary_key": true },
+          { "name": "exp_max_requise", "type": "INT" },
+          { "name": "pv_max_base", "type": "INT" }
+        ]
+      },
+      {
+        "name": "classe",
+        "description": "Les différentes classes jouables",
+        "columns": [
+          { "name": "id", "type": "INT", "is_primary_key": true },
+          { "name": "nom", "type": "VARCHAR" }
+        ]
+      },
+      {
+        "name": "titre",
+        "description": "Les titres déblocables et leurs bonus",
+        "columns": [
+          { "name": "id", "type": "INT", "is_primary_key": true },
+          { "name": "nom", "type": "VARCHAR" },
+          { "name": "bonus_stat", "type": "VARCHAR" }
+        ]
+      },
+      {
+        "name": "personnage",
+        "description": "Table principale des joueurs",
+        "columns": [
+          { "name": "id", "type": "INT", "is_primary_key": true },
+          { "name": "nom", "type": "VARCHAR" },
+          { "name": "description", "type": "TEXT" },
+          { "name": "taille", "type": "INT", "unit": "cm" },
+          { "name": "experience_actuelle", "type": "INT" },
+          { "name": "pv_actuels", "type": "INT" },
+          { "name": "classe_id", "type": "INT", "foreign_key": "classe.id" },
+          { "name": "titre_id", "type": "INT", "foreign_key": "titre.id", "nullable": true },
+          { "name": "level_id", "type": "INT", "foreign_key": "level.id" },
+          { "name": "caracteristique_id", "type": "INT", "foreign_key": "caracteristique.id" }
+        ]
+      },
+      {
+        "name": "historique_poids",
+        "description": "Suivi de l'évolution du poids du personnage dans le temps",
+        "columns": [
+          { "name": "id", "type": "INT", "is_primary_key": true },
+          { "name": "personnage_id", "type": "INT", "foreign_key": "personnage.id" },
+          { "name": "date_mesure", "type": "TIMESTAMP" },
+          { "name": "valeur_poids", "type": "DECIMAL" }
+        ]
+      },
+      {
+        "name": "monstre",
+        "description": "Les ennemis du jeu",
+        "columns": [
+          { "name": "id", "type": "INT", "is_primary_key": true },
+          { "name": "nom", "type": "VARCHAR" },
+          { "name": "caracteristique_id", "type": "INT", "foreign_key": "caracteristique.id" },
+          { "name": "exp_recompense", "type": "INT" },
+          { "name": "gold_recompense", "type": "INT" }
+        ]
+      },
+      {
+        "name": "stuff",
+        "description": "Catalogue de tous les objets du jeu",
+        "columns": [
+          { "name": "id", "type": "INT", "is_primary_key": true },
+          { "name": "nom", "type": "VARCHAR" },
+          { "name": "bonus_valeur", "type": "INT" },
+          { "name": "prix_base", "type": "INT" }
+        ]
+      },
+      {
+        "name": "inventaire",
+        "description": "Liaison entre les personnages et leurs objets possédés",
+        "columns": [
+          { "name": "id", "type": "INT", "is_primary_key": true },
+          { "name": "personnage_id", "type": "INT", "foreign_key": "personnage.id" },
+          { "name": "stuff_id", "type": "INT", "foreign_key": "stuff.id" },
+          { "name": "quantite", "type": "INT", "default": 1 },
+          { "name": "est_equipe", "type": "BOOLEAN", "default": false }
+        ]
+      },
+      {
+        "name": "magasin",
+        "description": "Les différents marchands",
+        "columns": [
+          { "name": "id", "type": "INT", "is_primary_key": true },
+          { "name": "nom", "type": "VARCHAR" }
+        ]
+      },
+      {
+        "name": "magasin_inventaire",
+        "description": "Liaison pour savoir quel magasin vend quel objet et à quel prix",
+        "columns": [
+          { "name": "magasin_id", "type": "INT", "foreign_key": "magasin.id" },
+          { "name": "stuff_id", "type": "INT", "foreign_key": "stuff.id" },
+          { "name": "prix_vente_local", "type": "INT" }
+        ]
+      },
+      {
+        "name": "tache",
+        "description": "Catalogue des quêtes et tâches disponibles",
+        "columns": [
+          { "name": "id", "type": "INT", "is_primary_key": true },
+          { "name": "nom", "type": "VARCHAR" },
+          { "name": "difficulte", "type": "INT" },
+          { "name": "exp_recompense", "type": "INT" },
+          { "name": "gold_recompense", "type": "INT" },
+          { "name": "periodicite", "type": "VARCHAR" }
+        ]
+      },
+      {
+        "name": "journal_tache",
+        "description": "Suivi de l'avancement des tâches pour chaque personnage",
+        "columns": [
+          { "name": "personnage_id", "type": "INT", "foreign_key": "personnage.id" },
+          { "name": "tache_id", "type": "INT", "foreign_key": "tache.id" },
+          { "name": "statut", "type": "VARCHAR" }
+        ]
+      }
+    ]
+  }
+}
