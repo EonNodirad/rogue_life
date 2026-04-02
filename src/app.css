@@ -34,6 +34,13 @@
                         0 0 0 calc(var(--px-gap) + var(--px-border-size)) var(--danger);
 }
 
+.pixel-icon {
+    
+    width: 1em; height: 1em;
+    vertical-align: middle;
+    display: inline-block;
+}
+
 *, *::before, *::after {
     box-sizing: border-box;
     border-radius: 0 !important; /* Pixel art — pas d'arrondi */
@@ -65,6 +72,7 @@ html, body {
     font-family: var(--font);
     font-size: 12px; /* Press Start 2P — base réduite vs 16px par défaut */
     overflow: hidden;
+    overflow-x: hidden;
 }
 
 /* Utilitaires toast / notification style parchemin */

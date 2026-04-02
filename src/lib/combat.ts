@@ -54,6 +54,15 @@ export interface CombatUnit {
 export interface DonjonItem {
     nom: string;
     valeur_or: number;
+    type: 'inutile' | 'consommable' | 'rare';
+    description?: string;
+    usage?: 'combat' | 'hors_combat';
+    prix_achat?: number;
+    effet?: {
+        type: 'boost_attq' | 'poison' | 'stun' | 'soin_pct';
+        valeur?: number;
+        duree?: number;
+    };
 }
 
 export interface CombatState {
@@ -70,8 +79,9 @@ export interface CombatState {
 }
 
 export interface ActionCombat {
-    type: 'attaque_base' | 'competence';
+    type: 'attaque_base' | 'competence' | 'consommable';
     competence?: Competence;
+    itemConsommable?: DonjonItem;
 }
 
 // ── Génération de monstre ─────────────────────────────────────────────────────
@@ -81,15 +91,41 @@ const NOMS_MONSTRES = [
     'Troll', 'Bandit', 'Fantôme', 'Drake', 'Golem',
 ];
 
-const ELEMENTS: Element[] = ['surnaturel','technologie','feu','eau','terre','air','vie','mort','tenebres','lumiere'];
+export const MONSTRE_IMAGES: Record<string, string> = {
+    'Slime':     '/monstres/slime.png',
+    'Gobelin':   '/monstres/gobelin.png',
+    'Squelette': '/monstres/squelette.png',
+    'Loup':      '/monstres/loup.png',
+    'Araignée':  '/monstres/araignee.png',
+    'Troll':     '/monstres/troll.png',
+    'Bandit':    '/monstres/bandit.png',
+    'Fantôme':   '/monstres/fantome.png',
+    'Drake':     '/monstres/dragon_feu.png',
+    'Golem':     '/monstres/golem_lumier.png',
+};
 
-const ITEMS_DONJON = [
-    { nom: 'Cristal brisé',     valeur_or: 8  },
-    { nom: 'Dent de monstre',   valeur_or: 5  },
-    { nom: 'Herbe mystérieuse', valeur_or: 10 },
-    { nom: 'Os étrange',        valeur_or: 4  },
-    { nom: 'Pierre magique',    valeur_or: 15 },
-    { nom: 'Plume rare',        valeur_or: 12 },
+
+const ITEMS_INUTILES: DonjonItem[] = [
+    { nom: 'Cristal brisé',   valeur_or: 8, type: 'inutile' },
+    { nom: 'Dent de monstre', valeur_or: 5, type: 'inutile' },
+    { nom: 'Os étrange',      valeur_or: 4, type: 'inutile' },
+    { nom: 'Écaille terne',   valeur_or: 6, type: 'inutile' },
+    { nom: 'Bave séchée',     valeur_or: 3, type: 'inutile' },
+    { nom: 'Griffe cassée',   valeur_or: 5, type: 'inutile' },
+];
+
+export const ITEMS_CONSOMMABLES: DonjonItem[] = [
+    { nom: 'Fiole de rage',            valeur_or: 8,  type: 'consommable', description: '+8 ATQ — 2 tours',      usage: 'combat',      prix_achat: 15, effet: { type: 'boost_attq', valeur: 8,  duree: 2 } },
+    { nom: 'Parchemin de poison',      valeur_or: 10, type: 'consommable', description: 'Empoisonne ennemi 3t',  usage: 'combat',      prix_achat: 18, effet: { type: 'poison',     valeur: 8,  duree: 3 } },
+    { nom: "Poudre d'étourdissement",  valeur_or: 12, type: 'consommable', description: 'Étourdit ennemi 1t',   usage: 'combat',      prix_achat: 20, effet: { type: 'stun',       duree: 1 } },
+    { nom: 'Bandage de fortune',       valeur_or: 6,  type: 'consommable', description: '+10% PV max',           usage: 'hors_combat', prix_achat: 12, effet: { type: 'soin_pct',   valeur: 10 } },
+];
+
+const ITEMS_RARES: DonjonItem[] = [
+    { nom: 'Herbe mystérieuse', valeur_or: 25, type: 'rare' },
+    { nom: 'Pierre magique',    valeur_or: 28, type: 'rare' },
+    { nom: 'Plume rare',        valeur_or: 22, type: 'rare' },
+    { nom: 'Gemme de donjon',   valeur_or: 35, type: 'rare' },
 ];
 
 export function genererMonstre(etage: number, room: number): CombatUnit {
@@ -105,11 +141,23 @@ export function genererMonstre(etage: number, room: number): CombatUnit {
     const def_spe  = 2 + pick(reste, 0.14); reste -= (def_spe - 2);
     const vitesse  = 2 + Math.max(0, Math.min(reste, Math.floor(Math.random() * 5)));
 
-    const element = ELEMENTS[Math.floor(Math.random() * ELEMENTS.length)];
+    const MONSTRE_ELEMENTS: Record<string, Element> = {
+        'Slime':     'eau',
+        'Gobelin':   'terre',
+        'Squelette': 'mort',
+        'Loup':      'air',
+        'Araignée':  'tenebres',
+        'Troll':     'vie',
+        'Bandit':    'technologie',
+        'Fantôme':   'surnaturel',
+        'Drake':     'feu',
+        'Golem':     'lumiere',
+    };
     const nom = NOMS_MONSTRES[Math.floor(Math.random() * NOMS_MONSTRES.length)];
+    const element = MONSTRE_ELEMENTS[nom];
 
     return {
-        nom: nom + (etage > 1 ? ` Niv.${etage}` : ''),
+        nom: nom,
         pv_max: pv_base,
         pv_actuels: pv_base,
         attq, attq_spe, def, def_spe, vitesse,
@@ -127,13 +175,17 @@ function pick(budget: number, ratio: number): number {
 }
 
 export function lootMonstre(etage: number, room: number): { items: DonjonItem[]; or_base: number } {
-    const nb_items = Math.random() < 0.6 ? 1 : (Math.random() < 0.7 ? 2 : 0);
-    const items: DonjonItem[] = [];
-    for (let i = 0; i < nb_items; i++) {
-        items.push(ITEMS_DONJON[Math.floor(Math.random() * ITEMS_DONJON.length)]);
+    const r = Math.random();
+    let item: DonjonItem;
+    if (r < 0.60) {
+        item = ITEMS_INUTILES[Math.floor(Math.random() * ITEMS_INUTILES.length)];
+    } else if (r < 0.90) {
+        item = ITEMS_CONSOMMABLES[Math.floor(Math.random() * ITEMS_CONSOMMABLES.length)];
+    } else {
+        item = ITEMS_RARES[Math.floor(Math.random() * ITEMS_RARES.length)];
     }
     const or_base = Math.floor(2 + etage * 1.5 + room * 0.5 + Math.random() * 5);
-    return { items, or_base };
+    return { items: [item], or_base };
 }
 
 // ── Initialisation du combat ──────────────────────────────────────────────────
@@ -306,6 +358,23 @@ function tourJoueur(state: CombatState, action: ActionCombat): CombatState {
                     log.push(`☠ ${monstre.nom} est déjà empoisonné`);
                 }
             }
+        }
+
+    } else if (action.type === 'consommable' && action.itemConsommable?.effet) {
+        const eff = action.itemConsommable.effet;
+        if (eff.type === 'boost_attq') {
+            joueur = { ...joueur, buffs: [...joueur.buffs, { stat: 'attq', valeur: eff.valeur!, tours_restants: eff.duree! }] };
+            log.push(`⚗️ ${joueur.nom} utilise ${action.itemConsommable.nom} ! +${eff.valeur} ATQ pour ${eff.duree} tours`);
+        } else if (eff.type === 'poison') {
+            if (!monstre.statuts.some(s => s.type === 'poison')) {
+                monstre = { ...monstre, statuts: [...monstre.statuts, { type: 'poison', valeur: eff.valeur!, tours_restants: eff.duree! }] };
+                log.push(`☠ ${joueur.nom} utilise ${action.itemConsommable.nom} — ${monstre.nom} est empoisonné !`);
+            } else {
+                log.push(`☠ ${monstre.nom} est déjà empoisonné`);
+            }
+        } else if (eff.type === 'stun') {
+            monstre = { ...monstre, statuts: [...monstre.statuts, { type: 'stun', valeur: 0, tours_restants: 1 }] };
+            log.push(`💫 ${joueur.nom} utilise ${action.itemConsommable.nom} — ${monstre.nom} est étourdi !`);
         }
     }
 

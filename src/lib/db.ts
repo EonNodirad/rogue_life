@@ -137,9 +137,11 @@ export async function getInventaire(personnage_id: number): Promise<inventaire[]
 export async function addToInventaire(personnage_id: number, stuff_id: number): Promise<void> {
     const db = await getDb();
     await db.execute(
-        `INSERT INTO inventaire (personnage_id, stuff_id, quantite, est_equipe)
-         VALUES ($1, $2, 1, 0)
-         ON CONFLICT DO UPDATE SET quantite = quantite + 1`,
+        `INSERT OR IGNORE INTO inventaire (personnage_id, stuff_id, quantite, est_equipe) VALUES ($1, $2, 0, 0)`,
+        [personnage_id, stuff_id]
+    );
+    await db.execute(
+        `UPDATE inventaire SET quantite = quantite + 1 WHERE personnage_id = $1 AND stuff_id = $2`,
         [personnage_id, stuff_id]
     );
 }
@@ -247,9 +249,11 @@ export async function acheterItem(personnage_id: number, magasin_id: number, stu
         [prix, personnage_id]
     );
     await db.execute(
-        `INSERT INTO inventaire (personnage_id, stuff_id, quantite, est_equipe)
-         VALUES ($1, $2, 1, 0)
-         ON CONFLICT(personnage_id, stuff_id) DO UPDATE SET quantite = quantite + 1`,
+        `INSERT OR IGNORE INTO inventaire (personnage_id, stuff_id, quantite, est_equipe) VALUES ($1, $2, 0, 0)`,
+        [personnage_id, stuff_id]
+    );
+    await db.execute(
+        `UPDATE inventaire SET quantite = quantite + 1 WHERE personnage_id = $1 AND stuff_id = $2`,
         [personnage_id, stuff_id]
     );
 }
@@ -311,6 +315,18 @@ export async function createTache(t: Omit<tache, 'id'>): Promise<void> {
     );
 }
 
+export async function supprimerRoutine(tache_id: number): Promise<void> {
+    const db = await getDb();
+    const rows = await db.select<tache[]>('SELECT * FROM tache WHERE id = $1', [tache_id]);
+    const t = rows[0];
+    if (!t) return;
+    if (t.date_creation) {
+        const diffDays = (Date.now() - new Date(t.date_creation).getTime()) / 86400000;
+        if (diffDays < 7) throw new Error(`Routine créée il y a ${Math.floor(diffDays)}j — suppression possible après 7 jours`);
+    }
+    await db.execute('DELETE FROM tache WHERE id = $1', [tache_id]);
+}
+
 export async function completerRoutine(personnage_id: number, tache_id: number): Promise<void> {
     const db = await getDb();
     const taches = await db.select<tache[]>('SELECT * FROM tache WHERE id = $1', [tache_id]);
@@ -346,11 +362,14 @@ export async function gameOver(personnage_id: number): Promise<void> {
          WHERE id=$1`,
         [p.caracteristique_id]
     );
-    // Retour au mode normal après game over
     await db.execute(
         'UPDATE personnage SET mode=\'normal\', mode_debut=NULL, dernier_coffre_hebdo=NULL, dernier_coffre_mensuel=NULL WHERE id=$1',
         [personnage_id]
     );
+    // Reset total : compétences + équipements
+    await db.execute(`DELETE FROM personnage_competence WHERE personnage_id = $1`, [personnage_id]);
+    await db.execute(`DELETE FROM competence WHERE source = 'donjon'`);
+    await db.execute(`DELETE FROM inventaire WHERE personnage_id = $1`, [personnage_id]);
 }
 
 export const STAT_SHOP_PRIX: Record<string, number> = {
@@ -592,6 +611,24 @@ export async function getCompetencesDonjon(): Promise<Competence[]> {
     return db.select<Competence[]>("SELECT * FROM competence WHERE source = 'donjon' ORDER BY rarete ASC");
 }
 
+export async function resetRunDonjon(personnage_id: number): Promise<void> {
+    const db = await getDb();
+    await db.execute(
+        `DELETE FROM personnage_competence
+         WHERE personnage_id = $1
+         AND competence_id IN (SELECT id FROM competence WHERE source = 'donjon')`,
+        [personnage_id]
+    );
+    await db.execute(`DELETE FROM competence WHERE source = 'donjon'`);
+}
+
+export async function resetTotalGameOver(personnage_id: number): Promise<void> {
+    const db = await getDb();
+    await db.execute(`DELETE FROM personnage_competence WHERE personnage_id = $1`, [personnage_id]);
+    await db.execute(`DELETE FROM competence WHERE source = 'donjon'`);
+    await db.execute(`DELETE FROM inventaire WHERE personnage_id = $1`, [personnage_id]);
+}
+
 export async function getPersonnageCompetences(personnage_id: number): Promise<(PersonnageCompetence & { competence: Competence })[]> {
     const db = await getDb();
     const rows = await db.select<(PersonnageCompetence & Competence & { comp_id: number })[]>(
@@ -672,7 +709,11 @@ export async function ajouterRecompenseDonjon(
     const db = await getDb();
     if (type === 'stuff') {
         await db.execute(
-            'INSERT INTO inventaire (personnage_id, stuff_id, quantite, est_equipe) VALUES ($1, $2, 1, 0)',
+            `INSERT OR IGNORE INTO inventaire (personnage_id, stuff_id, quantite, est_equipe) VALUES ($1, $2, 0, 0)`,
+            [personnage_id, item_id]
+        );
+        await db.execute(
+            `UPDATE inventaire SET quantite = quantite + 1 WHERE personnage_id = $1 AND stuff_id = $2`,
             [personnage_id, item_id]
         );
     } else {
@@ -822,13 +863,13 @@ export async function changerMode(personnage_id: number, newMode: GameMode): Pro
     const p = rows[0];
     if (!p) return;
     const currentMode = (p.mode ?? 'normal') as GameMode;
-    // Règle des 3j : uniquement pour revenir en normal depuis hard/cauchemar
-    // Basculer entre hard et cauchemar est libre
-    if (newMode === 'normal' && currentMode !== 'normal') {
+    const modeRank: Record<GameMode, number> = { normal: 0, hard: 1, cauchemar: 2 };
+    // Règle des 3j : pour toute descente dans la hiérarchie (cauchemar→hard, hard→normal, cauchemar→normal)
+    if (modeRank[newMode] < modeRank[currentMode]) {
         if (p.mode_debut) {
             const debut = new Date(p.mode_debut);
             const diffDays = (Date.now() - debut.getTime()) / 86400000;
-            if (diffDays < 3) throw new Error(`Mode actif depuis ${Math.floor(diffDays)}j — annulation possible après 3 jours`);
+            if (diffDays < 3) throw new Error(`Mode actif depuis ${Math.floor(diffDays)}j — retour possible après 3 jours`);
         }
     }
     const today = new Date().toISOString().split('T')[0];

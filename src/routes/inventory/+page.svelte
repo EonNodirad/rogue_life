@@ -7,6 +7,7 @@
     } from '$lib/db';
     import { refreshCharacterStore } from '$lib/stores';
     import type { stuff, inventaire, PersonnageCompetence, Competence } from '$lib/types';
+    import { ELEMENT_ICONS } from '$lib/icons';
 
     type InvItem = inventaire & { stuff: stuff };
     type PcItem  = PersonnageCompetence & { competence: Competence };
@@ -26,10 +27,6 @@
     let filtresCompOuverts = $state(false);
 
     const ELEMENTS = ['neutre','surnaturel','technologie','feu','eau','terre','air','vie','mort','tenebres','lumiere'];
-    const ELEMENT_ICONS: Record<string, string> = {
-        neutre:'○', surnaturel:'👻', technologie:'⚙️', feu:'🔥', eau:'💧',
-        terre:'🪨', air:'🌪', vie:'🌿', mort:'💀', tenebres:'🌑', lumiere:'☀️',
-    };
 
     async function charger() {
         const inv    = await getInventaire(1);
@@ -215,7 +212,7 @@
                 <button class="pill" class:active={filtreCompElement === 'tous'} onclick={() => filtreCompElement = 'tous'}>tous</button>
                 {#each ELEMENTS.filter(e => e !== 'neutre') as el}
                 <button class="pill" class:active={filtreCompElement === el}
-                    onclick={() => filtreCompElement = el}>{ELEMENT_ICONS[el]} {el}</button>
+                    onclick={() => filtreCompElement = el}><img class="pixel-icon" src={ELEMENT_ICONS[el]} alt={el} /> {el}</button>
                 {/each}
             </div>
         </div>
@@ -229,7 +226,7 @@
         <div class="item-row">
             <div class="item-info">
                 <span class="item-nom" style="color:{COULEURS_RARETE[pc.competence.rarete]}">{pc.competence.nom}</span>
-                <span class="item-meta">{ELEMENT_ICONS[pc.competence.element] ?? ''} {pc.competence.element} · {pc.competence.rarete.replace('_',' ')}</span>
+                <span class="item-meta"><img class="pixel-icon" src={ELEMENT_ICONS[pc.competence.element] ?? ''} alt={pc.competence.element} /> {pc.competence.element} · {pc.competence.rarete.replace('_',' ')}</span>
                 <span class="item-bonus">{pc.competence.description}</span>
             </div>
             <button

@@ -1,6 +1,6 @@
 <script lang="ts">
     import { onMount } from 'svelte';
-    import { getTaches, createTache, completerTache, echouerTache, completerRoutine, getHistoriqueActivite, ROUTINE_STATS, checkLevelUp, incrementerCompteurRoutines, getStuffs, getCompetencesDonjon, getPersonnageCompetences, ajouterRecompenseDonjon, checkModeCoffres } from '$lib/db';
+    import { getTaches, createTache, completerTache, echouerTache, completerRoutine, supprimerRoutine, getHistoriqueActivite, ROUTINE_STATS, checkLevelUp, incrementerCompteurRoutines, getStuffs, getCompetencesDonjon, getPersonnageCompetences, ajouterRecompenseDonjon, checkModeCoffres } from '$lib/db';
     import { refreshCharacterStore } from '$lib/stores';
     import type { tache, historique_activite, Rarete } from '$lib/types';
     import { piocherLoot } from '$lib/loot';
@@ -36,9 +36,9 @@
     let gameOverModal = $state(false);
 
     async function confirmerGameOver() {
-        const { gameOver } = await import('$lib/db');
-        await gameOver(1);
         localStorage.removeItem('donjon_save_1');
+        localStorage.removeItem('donjon_cleared_1');
+        localStorage.removeItem('donjon_best_1');
         gameOverModal = false;
         await refreshCharacterStore();
         await charger();
@@ -165,6 +165,15 @@
         }
     }
 
+    async function supprimerR(id: number) {
+        try {
+            await supprimerRoutine(id);
+            await charger();
+        } catch (e) {
+            afficherToast(String(e).replace('Error: ', ''));
+        }
+    }
+
     async function ouvrirLootRoutine() {
         const rarete = await incrementerCompteurRoutines(1);
         lootRarete = rarete;
@@ -252,9 +261,12 @@
                 </div>
                 <span class="tache-meta">{diffLabel(r.difficulte)} · +{stats.xp} XP · +{stats.gold}g · -{stats.pv} PV si oubli</span>
             </div>
-            {#if !faite}
-            <button class="btn-ok" onclick={() => faireRoutine(r.id)}>✓</button>
-            {/if}
+            <div class="routine-actions">
+                {#if !faite}
+                <button class="btn-ok" onclick={() => faireRoutine(r.id)}>✓</button>
+                {/if}
+                <button class="btn-del" onclick={() => supprimerR(r.id)} title="Supprimer (7j min)">×</button>
+            </div>
         </div>
         {/each}
     {/if}
@@ -284,7 +296,7 @@
     <div class="gameover-modal">
         <div class="gameover-titre">💀 GAME OVER</div>
         <div class="gameover-msg">Tes PV IRL ont atteint 0.<br>Le personnage repart de zéro.</div>
-        <div class="gameover-note">Ton inventaire et tes compétences sont conservés.</div>
+        <div class="gameover-note">Tes compétences et ta progression donjon sont réinitialisées.</div>
         <button class="gameover-btn" onclick={confirmerGameOver}>Recommencer</button>
     </div>
 </div>
@@ -413,6 +425,12 @@
         background: #e74c3c; color: white; border: none;
         border-radius: 4px; padding: 4px 10px; cursor: pointer; font-weight: bold;
     }
+    .btn-del {
+        background: transparent; color: var(--text-muted); border: 1px solid #444;
+        border-radius: 4px; padding: 4px 8px; cursor: pointer; font-size: 1rem; line-height: 1;
+    }
+    .btn-del:hover { color: #e74c3c; border-color: #e74c3c; }
+    .routine-actions { display: flex; align-items: center; gap: 6px; }
 
     .histo-row {
         display: flex;

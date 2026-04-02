@@ -77,12 +77,14 @@
     async function confirmerGameOver() {
         await gameOver(1);
         localStorage.removeItem('donjon_save_1');
+        localStorage.removeItem('donjon_cleared_1');
+        localStorage.removeItem('donjon_best_1');
         gameOverModal = false;
         await refreshCharacterStore();
         await charger();
     }
 
-    onMount(async () => {
+    onMount(() => {
         setTimeout(async () => {
             await charger();
             // Déclencher game over si PV IRL = 0 au chargement
@@ -256,14 +258,12 @@
     <div class="gameover-modal">
         <div class="mode-confirm-titre">Passer en mode {MODE_LABELS[modeConfirm]} ?</div>
         <div class="gameover-msg">{MODE_DESC[modeConfirm]}</div>
-        {#if modeConfirm === 'normal'}
-        <div class="gameover-note">Retour en normal possible seulement après 3 jours dans le mode.</div>
-        {:else if modeConfirm === 'cauchemar' && (personnage?.mode ?? 'normal') === 'hard'}
-        <div class="gameover-note">Escalade immédiate. Retour en normal possible après 3 jours.</div>
-        {:else if modeConfirm === 'hard' && (personnage?.mode ?? 'normal') === 'cauchemar'}
-        <div class="gameover-note">Passage libre. Retour en normal possible après 3 jours.</div>
-        {:else}
+        {#if modeConfirm === 'cauchemar'}
+        <div class="gameover-note">Escalade immédiate. Retour possible après 3 jours.</div>
+        {:else if modeConfirm === 'hard' && (personnage?.mode ?? 'normal') === 'normal'}
         <div class="gameover-note">Retour en normal possible après 3 jours.</div>
+        {:else}
+        <div class="gameover-note">Descente de mode — possible seulement après 3 jours.</div>
         {/if}
         <div class="confirm-btns">
             <button class="gameover-btn" onclick={confirmerChangerMode}>Confirmer</button>
@@ -278,7 +278,7 @@
     <div class="gameover-modal">
         <div class="gameover-titre">💀 GAME OVER</div>
         <div class="gameover-msg">Tes PV IRL ont atteint 0.<br>Le personnage repart de zéro.</div>
-        <div class="gameover-note">Ton inventaire et tes compétences sont conservés.</div>
+        <div class="gameover-note">Tes compétences et ta progression donjon sont réinitialisées.</div>
         <button class="gameover-btn" onclick={confirmerGameOver}>Recommencer</button>
     </div>
 </div>
@@ -386,9 +386,10 @@
     border-radius: 8px; padding: 8px 4px;
     cursor: pointer; font-family: var(--font);
     transition: background 0.15s;
+    min-width: 0; overflow: hidden;
   }
   .btn-allouer:hover { background: #1a4a80; }
-  .allouer-label { font-size: 0.7rem; color: #aaa; }
+  .allouer-label { font-size: 0.7rem; color: #aaa; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; width: 100%; text-align: center; }
   .allouer-gain  { font-size: 0.85rem; font-weight: bold; color: #f39c12; margin-top: 2px; }
 
   .stat-grid {
@@ -442,9 +443,10 @@
     background: #0f3460; border: 1px solid #555;
     border-radius: 8px; padding: 8px 4px; gap: 4px;
     cursor: pointer; font-family: var(--font); transition: background 0.15s;
+    min-width: 0; overflow: hidden;
   }
   .btn-mode:hover { background: #1a4a80; }
-  .mode-nom { font-size: 0.82rem; color: #eee; }
+  .mode-nom { font-size: 0.82rem; color: #eee; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; width: 100%; text-align: center; }
   .mode-badge { font-size: 0.62rem; background: #2ecc71; color: #000; border-radius: 4px; padding: 1px 4px; font-weight: bold; }
   .btn-mode.mode-actif { border-color: #2ecc71; }
   .btn-mode.mode-hard.mode-actif { border-color: #e67e22; }

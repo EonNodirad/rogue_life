@@ -4,16 +4,17 @@
     import {
         getPersonnage, getCaracteristique, getInventaire, getStuffs,
         getPersonnageCompetences, ajouterRecompenseDonjon, resetPvCombat, updatePvCombat,
-        getCompetences, getCompetencesDonjon, getPersonnageAffinites, incrementerLootDonjon,
+        getCompetencesDonjon, getPersonnageAffinites, incrementerLootDonjon,
     } from '$lib/db';
     import { piocherLoot } from '$lib/loot';
     import type { LootOption } from '$lib/loot';
     import { refreshCharacterStore } from '$lib/stores';
     import {
-        genererMonstre, initCombat, executerTour, lootMonstre,
-        type CombatState, type ActionCombat, type CombatUnit,
+        genererMonstre, initCombat, executerTour, lootMonstre, ITEMS_CONSOMMABLES, MONSTRE_IMAGES,
+        type CombatState, type ActionCombat, type CombatUnit, type DonjonItem,
     } from '$lib/combat';
     import type { Competence, PersonnageCompetence, stuff, Element, Rarete } from '$lib/types';
+    import { ELEMENT_ICONS } from '$lib/icons';
 
     // ── Gacha ────────────────────────────────────────────────────────────────
     interface BonusDonjon {
@@ -52,9 +53,6 @@
     let etage = $state(1);
     let salle = $state(0);
 
-    // Monde = groupe de 10 étages (1-10 → Monde 1, 11-20 → Monde 2…)
-    let monde = $derived(Math.ceil(etage / 10));
-    let etageInMonde = $derived(((etage - 1) % 10) + 1);
     function labelEtage(n: number) {
         const m = Math.ceil(n / 10);
         const e = ((n - 1) % 10) + 1;
@@ -77,12 +75,17 @@
         }
     }
 
-    let itemsDonjon = $state<{ nom: string; valeur_or: number }[]>([]);
+    let itemsDonjon = $state<DonjonItem[]>([]);
+    let inventaireDonjon = $state<DonjonItem[]>([]);
+    let inventaireOuvert = $state(false);
 
     let lootBoxRarete = $state('peu_commun');
     let lootChoix = $state<LootOption[]>([]);
 
     let combatState = $state<CombatState | null>(null);
+    let textBox = $state('');
+    let combatBloquer = $state(false);
+    let damageAnim = $state<{ val: number; cible: 'joueur' | 'monstre' } | null>(null);
 
     let pvCombatActuels = $state(0);
     let pvCombatMax = $state(1);
@@ -97,8 +100,6 @@
     let vitesseJoueur = $state(1);
     let competencesEquipees = $state<(PersonnageCompetence & { competence: Competence })[]>([]);
 
-    let allStuffIds = $state<number[]>([]);
-    let donjonCompIds = $state<number[]>([]);   // comps source='donjon'
     let ownedCompIds = $state<number[]>([]);    // comps possédées par le joueur
     let etageEnCours = $state(false);           // entre deux étages (pas nouvelle run)
 
@@ -135,17 +136,15 @@
             const pcs = await getPersonnageCompetences(1);
             competencesEquipees = pcs.filter(pc => pc.est_equipee);
             ownedCompIds = pcs.map(pc => pc.competence_id);
-            const donjonComps = await getCompetencesDonjon();
-            donjonCompIds = donjonComps.map(c => c.id);
+            await getCompetencesDonjon();
         } catch { /* migration 0007/0009 pas encore appliquée */ }
 
-        allStuffIds = stuffs.map(s => s.id);
     }
 
     const SAVE_KEY = 'donjon_save_1';
 
     function sauvegarderProgression() {
-        const save = { etage, salle, orDonjon, bonusDonjonActifs, itemsDonjon, pvCombatActuels, pvCombatMax, phase, lootBoxRarete };
+        const save = { etage, salle, orDonjon, bonusDonjonActifs, itemsDonjon, inventaireDonjon, pvCombatActuels, pvCombatMax, phase, lootBoxRarete };
         localStorage.setItem(SAVE_KEY, JSON.stringify(save));
     }
 
@@ -159,6 +158,7 @@
             orDonjon           = s.orDonjon ?? 0;
             bonusDonjonActifs  = s.bonusDonjonActifs ?? [];
             itemsDonjon        = s.itemsDonjon ?? [];
+            inventaireDonjon   = s.inventaireDonjon ?? [];
             if (s.pvCombatMax) pvCombatMax = s.pvCombatMax;
             if (s.pvCombatActuels != null) pvCombatActuels = s.pvCombatActuels;
             if (s.lootBoxRarete) lootBoxRarete = s.lootBoxRarete;
@@ -254,6 +254,7 @@
             salle = 0;
             orDonjon = 0;
             bonusDonjonActifs = [];
+            inventaireDonjon = [];
             etageEnCours = false;
             effacerSauvegarde();
             aSauvegarde = false;
@@ -342,46 +343,77 @@
     }
 
     // ── Combat ──────────────────────────────────────────────────────────────
-    function agir(action: ActionCombat) {
-        if (!combatState || combatState.termine) return;
-        combatState = executerTour(combatState, action);
+    function monstreImage(nom: string): string {
+        return MONSTRE_IMAGES[nom] ?? '/monstres/slime.png';
+    }
 
-        if (combatState.termine) {
-            if (combatState.vainqueur === 'joueur') {
-                pvCombatActuels = combatState.joueur.pv_actuels;
-                const loot = lootMonstre(etage, salle);
-                itemsDonjon = loot.items;
-                orDonjon += loot.or_base;
+    async function afficherLog(logs: string[], onFin: () => void): Promise<void> {
+        combatBloquer = true;
+        for (const ligne of logs) {
+            textBox = ligne;
+            await new Promise<void>(r => setTimeout(r, 700));
+        }
+        combatBloquer = false;
+        onFin();
+    }
+
+    function transitionPhase(state: CombatState): void {
+        if (!state.termine) return;
+        if (state.vainqueur === 'joueur') {
+            pvCombatActuels = state.joueur.pv_actuels;
+            const loot = lootMonstre(etage, salle);
+            itemsDonjon = loot.items;
+            orDonjon += loot.or_base;
+            updatePvCombat(1, pvCombatActuels);
+            mettreAJourMeilleurScore();
+            if (salle === 5) {
+                const soin = Math.floor(pvCombatMax * 0.3);
+                pvCombatActuels = Math.min(pvCombatMax, pvCombatActuels + soin);
                 updatePvCombat(1, pvCombatActuels);
+                genererGachaChoix();
+                gachaEstFinEtage = false;
+                phase = 'ravito';
+            } else if (salle === 10) {
                 mettreAJourMeilleurScore();
-
-                if (salle === 5) {
-                    const soin = Math.floor(pvCombatMax * 0.3);
-                    pvCombatActuels = Math.min(pvCombatMax, pvCombatActuels + soin);
-                    updatePvCombat(1, pvCombatActuels);
-                    genererGachaChoix();
-                    gachaEstFinEtage = false;
-                    phase = 'ravito';
-                } else if (salle === 10) {
-                    mettreAJourMeilleurScore();
-                    const premiereFois = !etageDejaTermine(etage);
-                    lootDisponible = premiereFois;
-                    if (premiereFois) marquerEtageTermine(etage);
-                    genererGachaChoix();
-                    gachaEstFinEtage = true;
-                    phase = 'gacha';
-                } else {
-                    phase = 'inter_salle';
-                }
-                sauvegarderProgression();
+                const premiereFois = !etageDejaTermine(etage);
+                lootDisponible = premiereFois;
+                if (premiereFois) marquerEtageTermine(etage);
+                genererGachaChoix();
+                gachaEstFinEtage = true;
+                phase = 'gacha';
             } else {
-                pvCombatActuels = 0;
-                updatePvCombat(1, 0);
-                effacerSauvegarde();
-                aSauvegarde = false;
-                phase = 'mort';
+                phase = 'inter_salle';
+            }
+            sauvegarderProgression();
+        } else {
+            pvCombatActuels = 0;
+            updatePvCombat(1, 0);
+            effacerSauvegarde();
+            aSauvegarde = false;
+            phase = 'mort';
+        }
+    }
+
+    function agir(action: ActionCombat) {
+        if (!combatState || combatState.termine || combatBloquer) return;
+        const oldLen = combatState.log.length;
+        const newState = executerTour(combatState, action);
+        combatState = newState;
+        const nouvLogs = newState.log.slice(oldLen);
+        const ligneAvecDegat = [...nouvLogs].reverse().find(l => /(\d+) dégât/.test(l));
+        if (ligneAvecDegat) {
+            const match = ligneAvecDegat.match(/(\d+) dégât/);
+            if (match) {
+                const cible: 'joueur' | 'monstre' =
+                    ligneAvecDegat.startsWith(`⚔ ${newState.monstre.nom}`) ||
+                    ligneAvecDegat.startsWith(`✨ ${newState.monstre.nom}`) ||
+                    ligneAvecDegat.startsWith(`☠ ${newState.monstre.nom}`)
+                        ? 'joueur' : 'monstre';
+                damageAnim = { val: parseInt(match[1]), cible };
+                setTimeout(() => damageAnim = null, 800);
             }
         }
+        afficherLog(nouvLogs, () => transitionPhase(newState));
     }
 
     async function preparerLootBox(increment = true) {
@@ -421,7 +453,7 @@
     }
 
     // ── Inter-salle ─────────────────────────────────────────────────────────
-    function vendre(item: { nom: string; valeur_or: number }) {
+    function vendre(item: DonjonItem) {
         orDonjon += item.valeur_or;
         itemsDonjon = itemsDonjon.filter(i => i !== item);
     }
@@ -429,6 +461,41 @@
     function toutVendre() {
         orDonjon += itemsDonjon.reduce((s, i) => s + i.valeur_or, 0);
         itemsDonjon = [];
+    }
+
+    function garder(item: DonjonItem) {
+        inventaireDonjon = [...inventaireDonjon, item];
+        itemsDonjon = itemsDonjon.filter(i => i !== item);
+        sauvegarderProgression();
+    }
+
+    function vendreInventaire(item: DonjonItem) {
+        orDonjon += item.valeur_or;
+        inventaireDonjon = inventaireDonjon.filter(i => i !== item);
+        sauvegarderProgression();
+    }
+
+    function utiliserHorsCombat(item: DonjonItem) {
+        if (item.effet?.type === 'soin_pct') {
+            const soin = Math.floor(pvCombatMax * (item.effet.valeur! / 100));
+            pvCombatActuels = Math.min(pvCombatMax, pvCombatActuels + soin);
+            updatePvCombat(1, pvCombatActuels);
+        }
+        inventaireDonjon = inventaireDonjon.filter(i => i !== item);
+        sauvegarderProgression();
+    }
+
+    function acheterConsommable(item: DonjonItem) {
+        if (orDonjon < (item.prix_achat ?? 99)) return;
+        orDonjon -= item.prix_achat!;
+        inventaireDonjon = [...inventaireDonjon, { ...item }];
+        sauvegarderProgression();
+    }
+
+    function utiliserConsommableEnCombat(item: DonjonItem) {
+        if (combatBloquer) return;
+        inventaireDonjon = inventaireDonjon.filter(i => i !== item);
+        agir({ type: 'consommable', itemConsommable: item });
     }
 
     function acheterSoin() {
@@ -464,20 +531,7 @@
         tenebres: '#6c3483', lumiere: '#f1c40f',
     };
 
-    const ELEMENT_ICONS: Record<string, string> = {
-        neutre: '○', surnaturel: '👻', technologie: '⚙️',
-        feu: '🔥', eau: '💧', terre: '🪨',
-        air: '🌪', vie: '🌿', mort: '💀',
-        tenebres: '🌑', lumiere: '☀️',
-    };
 
-    const effetLabel: Record<string, string> = {
-        physique: '⚔', magique: '✨', buff_attq: '💪', buff_def: '🛡', buff_vitesse: '💨', poison: '☠', stun: '💫',
-    };
-
-    function logRecent(state: CombatState) {
-        return state.log.slice(-6);
-    }
 </script>
 
 <div class="donjon">
@@ -490,7 +544,7 @@
         <div class="stat-row">
             <span class="stat-label">PV Combat</span>
             <div class="barre-wrap">
-                <div class="barre" style="width:{Math.round(pvCombatActuels/pvCombatMax*100)}%; background:{pvColor(Math.round(pvCombatActuels/pvCombatMax*100))}"></div>
+                <div class="barre" style="width:{Math.round(pvCombatActuels/pvCombatMax*100)}%; color:{pvColor(Math.round(pvCombatActuels/pvCombatMax*100))}"></div>
             </div>
             <span class="stat-val">{pvCombatActuels}/{pvCombatMax}</span>
         </div>
@@ -517,7 +571,7 @@
             {:else}
                 <div class="comp-grid">
                     {#each competencesEquipees as pc}
-                    <div class="comp-chip" style="border-color:{ELEMENT_COLORS[pc.competence.element] ?? '#555'}">{ELEMENT_ICONS[pc.competence.element] ?? '○'} {pc.competence.nom}</div>
+                    <div class="comp-chip" style="border-color:{ELEMENT_COLORS[pc.competence.element] ?? '#555'}"><img class="pixel-icon" src={ELEMENT_ICONS[pc.competence.element] ?? ''} alt={pc.competence.element} /> {pc.competence.nom}</div>
                     {/each}
                 </div>
             {/if}
@@ -558,62 +612,75 @@
         <span class="or-chip">💰 {orDonjon} od</span>
     </div>
 
-    <div class="unit-card monstre-card" style="border-left-color:{ELEMENT_COLORS[cs.monstre.element] ?? '#e74c3c'}">
-        <div class="unit-top">
-            <span class="unit-nom">👹 {cs.monstre.nom}</span>
-            <span class="element-badge" style="background:{ELEMENT_COLORS[cs.monstre.element] ?? '#888'}22; color:{ELEMENT_COLORS[cs.monstre.element] ?? '#888'}; border-color:{ELEMENT_COLORS[cs.monstre.element] ?? '#888'}">
-                {ELEMENT_ICONS[cs.monstre.element] ?? '○'} {cs.monstre.element}
-            </span>
-            <span class="unit-pv">{cs.monstre.pv_actuels}/{cs.monstre.pv_max} PV</span>
+    <div class="combat-scene">
+        <!-- Zone monstre : image pleine largeur, infos en overlay bas -->
+        <div class="zone-monstre">
+            <img class="ennemi-img" src={monstreImage(cs.monstre.nom)} alt={cs.monstre.nom} />
+            {#if damageAnim?.cible === 'monstre'}<span class="damage-float">-{damageAnim.val}</span>{/if}
+            <div class="info-overlay monstre-overlay">
+                <div class="unit-plaque-nom">{cs.monstre.nom} Lv{cs.monstre.niveau}</div>
+                <div class="hp-row">
+                    <span class="hp-coeur">❤</span>
+                    <div class="hp-track"><div class="hp-fill" style="width:{pvPct(cs.monstre)}%; color:{pvColor(pvPct(cs.monstre))}"></div></div>
+                    <span class="hp-nums">{cs.monstre.pv_actuels}/{cs.monstre.pv_max}</span>
+                </div>
+                {#if cs.monstre.statuts.length || cs.monstre.buffs.length}
+                <div class="statuts-row">
+                    {#each cs.monstre.statuts as st}<span class="statut-chip">{st.type === 'poison' ? '☠' : '💫'} {st.tours_restants}t</span>{/each}
+                    {#each cs.monstre.buffs as b}<span class="buff-chip">↑{b.stat} {b.tours_restants}t</span>{/each}
+                </div>
+                {/if}
+            </div>
         </div>
-        <div class="barre-wrap">
-            <div class="barre" style="width:{pvPct(cs.monstre)}%; background:{pvColor(pvPct(cs.monstre))}"></div>
-        </div>
-        <div class="statuts-row">
-            {#each cs.monstre.statuts as st}
-                <span class="statut-chip">{st.type === 'poison' ? '☠' : '💫'} {st.tours_restants}t</span>
-            {/each}
-            {#each cs.monstre.buffs as b}
-                <span class="buff-chip">↑{b.stat} {b.tours_restants}t</span>
-            {/each}
+
+        <!-- Zone joueur : image héros déborde sur monstre, HP en dessous -->
+        <div class="zone-joueur">
+            <div class="joueur-sprite-wrap">
+                <img class="joueur-img" src="/heroe.png" alt="Héros" />
+                {#if damageAnim?.cible === 'joueur'}<span class="damage-float">-{damageAnim.val}</span>{/if}
+            </div>
+            <div class="joueur-overlay">
+                <div class="unit-plaque-nom">{cs.joueur.nom} Lv{cs.joueur.niveau}</div>
+                <div class="hp-row">
+                    <span class="hp-coeur">❤</span>
+                    <div class="hp-track"><div class="hp-fill" style="width:{pvPct(cs.joueur)}%; color:{pvColor(pvPct(cs.joueur))}"></div></div>
+                    <span class="hp-nums">{cs.joueur.pv_actuels}/{cs.joueur.pv_max}</span>
+                </div>
+                {#if cs.joueur.statuts.length || cs.joueur.buffs.length}
+                <div class="statuts-row">
+                    {#each cs.joueur.statuts as st}<span class="statut-chip">{st.type === 'poison' ? '☠' : '💫'} {st.tours_restants}t</span>{/each}
+                    {#each cs.joueur.buffs as b}<span class="buff-chip">↑{b.stat} {b.tours_restants}t</span>{/each}
+                </div>
+                {/if}
+            </div>
         </div>
     </div>
 
-    <div class="log-box">
-        {#each logRecent(cs) as ligne}
-            <div class="log-ligne">{ligne}</div>
-        {/each}
-        {#if cs.log.length === 0}
-            <div class="log-ligne vide">Le combat commence…</div>
-        {/if}
-    </div>
-
-    <div class="unit-card joueur-card">
-        <div class="unit-top">
-            <span class="unit-nom">🧙 {cs.joueur.nom}</span>
-            <span class="unit-pv">{cs.joueur.pv_actuels}/{cs.joueur.pv_max} PV</span>
-        </div>
-        <div class="barre-wrap">
-            <div class="barre" style="width:{pvPct(cs.joueur)}%; background:{pvColor(pvPct(cs.joueur))}"></div>
-        </div>
-        <div class="statuts-row">
-            {#each cs.joueur.statuts as st}
-                <span class="statut-chip">{st.type === 'poison' ? '☠' : '💫'} {st.tours_restants}t</span>
-            {/each}
-            {#each cs.joueur.buffs as b}
-                <span class="buff-chip">↑{b.stat} {b.tours_restants}t</span>
-            {/each}
-        </div>
+    <div class="text-box px-frame">
+        <span class="text-cursor">▶</span>
+        <span class="text-content">
+            {#if textBox}{textBox}
+            {:else if cs.log.length === 0}Le combat commence…
+            {:else}{cs.log.at(-1) ?? ''}{/if}
+        </span>
     </div>
 
     {#if !cs.termine}
-    <div class="actions">
-        <button class="btn-action attaque" onclick={() => agir({ type: 'attaque_base' })}>⚔️ Attaque</button>
+    <div class="actions-grid" class:bloque={combatBloquer}>
+        <button class="btn-nes attaque" onclick={() => agir({ type: 'attaque_base' })} disabled={combatBloquer}>
+            <img class="pixel-icon" src={ELEMENT_ICONS['neutre']} alt="normal" /> ATTAQUE
+        </button>
         {#each competencesEquipees as pc}
-        <button class="btn-action competence"
-            style="border-color:{ELEMENT_COLORS[pc.competence.element] ?? '#555'}"
-            onclick={() => agir({ type: 'competence', competence: pc.competence })}>
-            {ELEMENT_ICONS[pc.competence.element] ?? '✨'} {pc.competence.nom}
+        <button class="btn-nes competence"
+            style="--elem-color:{ELEMENT_COLORS[pc.competence.element] ?? '#3498db'}"
+            onclick={() => agir({ type: 'competence', competence: pc.competence })}
+            disabled={combatBloquer}>
+            <img class="pixel-icon" src={ELEMENT_ICONS[pc.competence.element] ?? ''} alt={pc.competence.element} /> {pc.competence.nom}
+        </button>
+        {/each}
+        {#each inventaireDonjon.filter(i => i.usage === 'combat') as item}
+        <button class="btn-nes consommable-btn" onclick={() => utiliserConsommableEnCombat(item)} disabled={combatBloquer}>
+            ⚗️ {item.nom}
         </button>
         {/each}
     </div>
@@ -624,23 +691,67 @@
     <div class="inter-salle">
         {#if phase === 'ravito'}
             <div class="victoire-titre">💊 Mi-étage — Ravitaillement !</div>
-            <div class="ravito-msg">+30% PV combat récupérés<br>PV : {pvCombatActuels}/{pvCombatMax}</div>
         {:else}
             <div class="victoire-titre">✅ Monstre vaincu !</div>
         {/if}
 
         <div class="salle-info">{labelEtage(etage)} · Salle {salle}/10 · 💰 {orDonjon} od</div>
 
+        <div class="pv-inter">
+            <span class="hp-coeur">❤</span>
+            <div class="hp-track">
+                <div class="hp-fill" style="width:{Math.round(pvCombatActuels/pvCombatMax*100)}%; color:{pvColor(Math.round(pvCombatActuels/pvCombatMax*100))}"></div>
+            </div>
+            <span class="hp-nums">{pvCombatActuels}/{pvCombatMax}</span>
+        </div>
+
         {#if itemsDonjon.length > 0}
         <div class="section-titre">Butin</div>
         {#each itemsDonjon as item}
         <div class="item-drop">
-            <span class="item-nom">{item.nom}</span>
-            <span class="item-val">{item.valeur_or} od</span>
-            <button class="btn-vendre" onclick={() => vendre(item)}>Vendre</button>
+            {#if item.type === 'consommable'}
+                <span class="item-badge conso">✨</span>
+            {:else if item.type === 'rare'}
+                <span class="item-badge rare">⭐</span>
+            {:else}
+                <span class="item-badge">🗑️</span>
+            {/if}
+            <div class="item-info">
+                <span class="item-nom">{item.nom}</span>
+                {#if item.description}<span class="item-desc">{item.description}</span>{/if}
+            </div>
+            {#if item.type === 'consommable'}
+                <button class="btn-garder" onclick={() => garder(item)}>Garder</button>
+            {/if}
+            <button class="btn-vendre" onclick={() => vendre(item)}>{item.valeur_or} od</button>
         </div>
         {/each}
         <button class="btn-vendre-tout" onclick={toutVendre}>Tout vendre</button>
+        {/if}
+
+        {#if inventaireDonjon.length > 0}
+        <button class="btn-inventaire" onclick={() => inventaireOuvert = !inventaireOuvert}>
+            📦 Inventaire ({inventaireDonjon.length}) {inventaireOuvert ? '▲' : '▼'}
+        </button>
+        {#if inventaireOuvert}
+        <div class="inventaire-panel px-frame">
+            {#each inventaireDonjon as item}
+            <div class="inv-item">
+                <div class="inv-item-info">
+                    <span class="inv-item-nom">{item.nom}</span>
+                    {#if item.description}<span class="item-desc">{item.description}</span>{/if}
+                    <span class="inv-usage-badge">{item.usage === 'combat' ? '⚔️ combat' : '🏕️ hors combat'}</span>
+                </div>
+                <div class="inv-item-btns">
+                    {#if item.usage === 'hors_combat'}
+                    <button class="btn-utiliser" onclick={() => utiliserHorsCombat(item)}>Utiliser</button>
+                    {/if}
+                    <button class="btn-vendre" onclick={() => vendreInventaire(item)}>{item.valeur_or} od</button>
+                </div>
+            </div>
+            {/each}
+        </div>
+        {/if}
         {/if}
 
         <div class="section-titre">Mini-boutique</div>
@@ -653,6 +764,17 @@
                 20 od
             </button>
         </div>
+        {#each ITEMS_CONSOMMABLES as item}
+        <div class="mini-shop-item">
+            <div>
+                <div class="mini-shop-nom">✨ {item.nom}</div>
+                <div class="mini-shop-desc">{item.description}</div>
+            </div>
+            <button class="btn-soin" onclick={() => acheterConsommable(item)} disabled={orDonjon < (item.prix_achat ?? 99)}>
+                {item.prix_achat} od
+            </button>
+        </div>
+        {/each}
 
         {#if phase === 'ravito'}
         <button class="btn-gacha" onclick={() => { phase = 'gacha'; }}>🎲 Choisir votre bonus !</button>
@@ -727,7 +849,7 @@
         <div class="mort-titre">💀 Défaite</div>
         <div class="mort-msg">Vaincu au {labelEtage(etage)}, salle {salle}.</div>
         <div class="mort-or">Or donjon accumulé : {orDonjon} od</div>
-        <button class="btn-entrer" onclick={() => { phase = 'lobby'; salle = 0; etage = 1; orDonjon = 0; etageEnCours = false; chargerPerso(); }}>
+        <button class="btn-entrer" onclick={() => { phase = 'lobby'; salle = 0; etage = 1; orDonjon = 0; etageEnCours = false; inventaireDonjon = []; chargerPerso(); }}>
             🏠 Retour au lobby
         </button>
     </div>
@@ -736,9 +858,15 @@
 </div>
 
 <style>
+
     .donjon {
         color: #eee;
         font-family: var(--font);
+        width: 100%;
+        box-sizing: border-box;
+        overflow-x: hidden;
+        padding: 0 6px; /* On ajoute 6px de marge interne à gauche et à droite */
+    
     }
 
     /* ── Lobby ── */
@@ -751,10 +879,15 @@
     .stat-label { font-size: 0.75rem; color: #aaa; white-space: nowrap; }
     .stat-val   { font-size: 0.75rem; color: #eee; white-space: nowrap; }
     .barre-wrap {
-        flex: 1; height: 8px;
-        background: #333; border-radius: 4px; overflow: hidden;
+        flex: 1; height: 12px;
+        background: #222; border: 1px solid #555; overflow: hidden;
     }
-    .barre { height: 100%; border-radius: 4px; transition: width 0.3s; }
+    .barre {
+        height: 100%; transition: width 0.3s;
+        background: repeating-linear-gradient(
+            90deg, currentColor 0, currentColor 7px, transparent 7px, transparent 9px
+        );
+    }
     .or-donjon { font-size: 0.82rem; color: #f39c12; }
     .comp-block { background: #1a1a3e; border-radius: 8px; padding: 10px 12px; }
     .comp-title { font-size: 0.72rem; color: #888; margin-bottom: 6px; }
@@ -762,8 +895,9 @@
     .comp-chip {
         background: #0f3460; border: 1px solid #555;
         border-radius: 12px; padding: 3px 8px;
-        font-size: 0.7rem; color: #eee;
+        font-size: 1,5rem; color: #eee;
     }
+    .comp-chip .pixel-icon, .btn-nes .pixel-icon { width: 25px; height: 25px; }
     .vide { color: #555; font-style: italic; font-size: 0.8rem; margin: 0; }
     .lien { color: #e94560; }
     .btn-entrer {
@@ -781,46 +915,113 @@
     .salle-badge { font-size: 0.72rem; color: #888; text-transform: uppercase; }
     .or-chip     { font-size: 0.78rem; color: #f39c12; }
 
-    .unit-card {
-        background: #1a1a3e; border: 1px solid #333;
-        border-radius: 8px; padding: 10px 12px; margin-bottom: 10px;
-    }
-    .monstre-card { border-left: 3px solid #e74c3c; }
-    .joueur-card  { border-left: 3px solid #2ecc71; }
-    .unit-top { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; margin-bottom: 4px; }
-    .unit-nom { font-weight: bold; font-size: 0.9rem; flex: 1; }
-    .unit-pv  { font-size: 0.75rem; color: #aaa; margin-left: auto; }
-    .element-badge {
-        font-size: 0.62rem; padding: 1px 6px;
-        border: 1px solid; border-radius: 8px;
-        white-space: nowrap; text-transform: capitalize;
-    }
-    .statuts-row { display: flex; gap: 4px; margin-top: 4px; flex-wrap: wrap; }
-    .statut-chip {
-        font-size: 0.62rem; padding: 1px 6px;
-        background: rgba(231,76,60,0.2); color: #e74c3c; border-radius: 8px;
-    }
-    .buff-chip {
-        font-size: 0.62rem; padding: 1px 6px;
-        background: rgba(46,204,113,0.2); color: #2ecc71; border-radius: 8px;
+    /* ── Combat ── */
+    .combat-scene { display: flex; flex-direction: column; margin-bottom: 8px; }
+
+    /* Zone monstre : image pleine largeur, HUD en overlay */
+    .zone-monstre { position: relative; }
+    .ennemi-img { width: 115%;height: auto; display: block; margin-top: 20px; }
+    .monstre-overlay {
+        position: absolute; top: 0; left: 0; right: 0;
+        padding: 10px 8px;
     }
 
-    .log-box {
-        background: #0d0d1e; border: 1px solid #222;
-        border-radius: 6px; padding: 8px 10px;
-        margin-bottom: 10px; min-height: 90px; max-height: 120px;
-        overflow-y: auto;
-    }
-    .log-ligne { font-size: 0.72rem; color: #ccc; line-height: 1.7; }
+    /* Zone joueur : image héros déborde sur monstre, HP en dessous */
+    .zone-joueur { position: relative; display: flex; gap: 8px; padding: 0px 0; z-index: 10;}
+    .joueur-sprite-wrap {
+        position: absolute;
+        bottom: 100%;
+        left: 0; /* L'image reste collée à gauche */
+        pointer-events: none;
+        display: flex;
+        margin-bottom: -9px;
+        z-index: 20;
 
-    .actions { display: flex; flex-wrap: wrap; gap: 6px; }
-    .btn-action {
-        flex: 1; min-width: 90px; border: none;
-        border-radius: 6px; padding: 10px 6px;
-        cursor: pointer; font-size: 0.75rem; font-weight: bold; font-family: var(--font);
     }
-    .btn-action.attaque    { background: #e94560; color: white; }
-    .btn-action.competence { background: #0f3460; color: #eee; border: 1px solid #555; }
+    .joueur-img { width: 75%;height: auto; display: flex;}
+    .joueur-overlay { flex: 1; min-width: 0; }
+
+    /* HUD commun */
+    .unit-plaque-nom {
+    display: block;        
+    width: fit-content;    
+    
+    margin-left: auto;
+    margin-right: 0;  
+    text-align: right;     
+    
+    font-size: 0.72rem; 
+    text-transform: uppercase;
+    letter-spacing: 1px; 
+    white-space: nowrap; 
+    overflow: hidden; 
+    text-overflow: ellipsis;
+    max-width: 100%;       
+    }
+    .hp-row { display: flex; align-items: center; gap: 4px; }
+    .hp-coeur { font-size: 0.75rem; }
+    .hp-track {
+        flex: 1; height: 11px;
+        background: #222; border: 1px solid #555; overflow: hidden;
+    }
+    .hp-fill {
+        height: 100%; transition: width 0.3s;
+        background: repeating-linear-gradient(
+            90deg, currentColor 0, currentColor 7px, transparent 7px, transparent 9px
+        );
+    }
+    .hp-nums { font-size: 0.65rem; color: var(--text-muted); white-space: nowrap; }
+
+    .statuts-row { display: flex; gap: 4px; margin-top: 3px; flex-wrap: wrap; }
+    .statut-chip { font-size: 0.65rem; padding: 1px 5px; background: rgba(231,76,60,0.2); color: #e74c3c; }
+    .buff-chip   { font-size: 0.65rem; padding: 1px 5px; background: rgba(46,204,113,0.2); color: #2ecc71; }
+
+    .damage-float {
+        position: absolute; top: -8px; left: 50%;
+        transform: translateX(-50%);
+        font-size: 1rem; font-weight: bold;
+        color: var(--danger); pointer-events: none;
+        animation: floatUp 0.8s ease-out forwards; z-index: 10;
+    }
+    @keyframes floatUp {
+        0%   { opacity: 1; transform: translateX(-50%) translateY(0); }
+        100% { opacity: 0; transform: translateX(-50%) translateY(-20px); }
+    }
+
+    .text-box {
+        background: #f0e8d0; color: #1a0a00;
+        font-size: 0.75rem; line-height: 1.8;
+        padding: 8px 10px; min-height: 52px;
+        display: flex; align-items: flex-start; gap: 6px;
+        margin-bottom: 16px;
+        margin-top: 10px;
+    }
+    .text-cursor { animation: blink 0.8s step-end infinite; flex-shrink: 0; font-size: 0.75rem; }
+    @keyframes blink { 0%,100%{opacity:1} 50%{opacity:0} }
+    .text-content { flex: 1; word-break: break-word; }
+
+    .actions-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 13px; margin-bottom: 8px;}
+    .actions-grid.bloque { opacity: 0.4; pointer-events: none; }
+    .btn-nes {
+        font-family: var(--font); font-size: 0.72rem;
+        padding: 10px 8px; cursor: pointer;
+        border: var(--px-border); box-shadow: var(--px-shadow);
+        background: var(--bg-card); color: var(--text);
+        text-transform: uppercase;
+        white-space: normal; word-break: break-word;
+        line-height: 1.3; text-align: center;
+    }
+    .btn-nes.attaque {
+        background: var(--accent); color: white; border-color: var(--accent);
+        box-shadow: 0 0 0 var(--px-gap) var(--bg-card),
+                    0 0 0 calc(var(--px-gap) + var(--px-border-size)) var(--accent);
+    }
+    .btn-nes.competence {
+        background: var(--bg-header);
+        border-color: var(--elem-color, #3498db);
+        box-shadow: 0 0 0 var(--px-gap) var(--bg-card),
+                    0 0 0 calc(var(--px-gap) + var(--px-border-size)) var(--elem-color, #3498db);
+    }
 
     /* ── Inter-salle / Ravito ── */
     .inter-salle { display: flex; flex-direction: column; gap: 10px; }
@@ -831,14 +1032,50 @@
         font-size: 0.82rem; color: #2ecc71; text-align: center;
     }
     .salle-info { font-size: 0.75rem; color: #888; text-align: center; }
+    .pv-inter { display: flex; align-items: center; gap: 6px; }
     .section-titre { font-size: 0.72rem; color: #888; text-transform: uppercase; margin-top: 4px; }
     .item-drop {
-        display: flex; align-items: center; justify-content: space-between;
+        display: flex; align-items: center;
         background: #1a1a3e; border-radius: 6px; padding: 6px 10px;
         font-size: 0.8rem; gap: 8px;
     }
-    .item-nom { flex: 1; }
+    .item-badge { font-size: 0.85rem; flex-shrink: 0; }
+    .item-info { flex: 1; display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+    .item-nom { font-size: 0.75rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .item-desc { font-size: 0.62rem; color: #9b59b6; }
     .item-val { color: #f39c12; font-size: 0.75rem; }
+    .btn-garder {
+        background: #9b59b6; color: white; border: none;
+        padding: 3px 8px; cursor: pointer; font-size: 0.65rem; font-family: var(--font);
+        flex-shrink: 0;
+    }
+    .btn-inventaire {
+        background: #1a1a3e; color: #9b59b6;
+        border: 1px solid #9b59b6; padding: 6px 12px;
+        cursor: pointer; font-size: 0.72rem; font-family: var(--font);
+        width: 100%; text-align: left;
+    }
+    .inventaire-panel {
+        background: var(--bg-card); padding: 8px; display: flex; flex-direction: column; gap: 6px;
+    }
+    .inv-item {
+        display: flex; align-items: center; gap: 6px;
+        padding: 5px 6px; background: #16213e;
+    }
+    .inv-item-info { flex: 1; display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+    .inv-item-nom { font-size: 0.72rem; }
+    .inv-usage-badge { font-size: 0.58rem; color: #888; }
+    .inv-item-btns { display: flex; gap: 4px; flex-shrink: 0; }
+    .btn-utiliser {
+        background: #2ecc71; color: #111; border: none;
+        padding: 3px 8px; cursor: pointer; font-size: 0.65rem; font-family: var(--font);
+    }
+    .btn-nes.consommable-btn {
+        background: #6c3483; color: white;
+        border-color: #9b59b6;
+        box-shadow: 0 0 0 var(--px-gap) var(--bg-card),
+                    0 0 0 calc(var(--px-gap) + var(--px-border-size)) #9b59b6;
+    }
     .btn-vendre {
         background: #f39c12; color: #111; border: none;
         border-radius: 4px; padding: 3px 8px;

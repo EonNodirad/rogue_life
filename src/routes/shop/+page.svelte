@@ -6,6 +6,7 @@
     } from '$lib/db';
     import { refreshCharacterStore, characterStore } from '$lib/stores';
     import type { stuff, inventaire, magasin_inventaire, Competence, PersonnageCompetence } from '$lib/types';
+    import { ELEMENT_ICONS } from '$lib/icons';
 
     let onglet = $state<'armes' | 'armures' | 'utilitaires' | 'competences'>('armes');
     let catalogue = $state<(magasin_inventaire & { stuff: stuff })[]>([]);
@@ -26,12 +27,6 @@
         tenebres: '#6c3483', lumiere: '#f1c40f',
     };
 
-    const ELEMENT_ICONS: Record<string, string> = {
-        neutre: '○', surnaturel: '👻', technologie: '⚙️',
-        feu: '🔥', eau: '💧', terre: '🪨',
-        air: '🌪', vie: '🌿', mort: '💀',
-        tenebres: '🌑', lumiere: '☀️',
-    };
 
     const RARETE_COLORS: Record<string, string> = {
         commun: '#aaa',
@@ -264,7 +259,7 @@ function possedeComp(comp_id: number) {
             {#each Object.keys(ELEMENT_ICONS) as el}
                 <button class="pill" class:actif={filtreElement === el}
                     style={filtreElement === el ? `color:${ELEMENT_COLORS[el]};border-color:${ELEMENT_COLORS[el]}` : ''}
-                    onclick={() => filtreElement = el}>{ELEMENT_ICONS[el]} {el}</button>
+                    onclick={() => filtreElement = el}><img class="pixel-icon" src={ELEMENT_ICONS[el]} alt={el} /> {el}</button>
             {/each}
         </div>
         {/if}
@@ -291,7 +286,7 @@ function possedeComp(comp_id: number) {
                         <span class="slot-badge">{typeCompLabel[c.type]}</span>
                         <span class="rarete-badge" style="color:{rc}">{rareteLabel[c.rarete]}</span>
                         {#if c.element && c.element !== 'neutre'}
-                        <span class="element-badge" style="color:{ELEMENT_COLORS[c.element]}; border-color:{ELEMENT_COLORS[c.element]}">{ELEMENT_ICONS[c.element]} {c.element}</span>
+                        <span class="element-badge" style="color:{ELEMENT_COLORS[c.element]}; border-color:{ELEMENT_COLORS[c.element]}"><img class="pixel-icon" src={ELEMENT_ICONS[c.element]} alt={c.element} /> {c.element}</span>
                         {/if}
                     </div>
                     <span class="bonus">{compEffetStr(c)}</span>
@@ -319,7 +314,7 @@ function possedeComp(comp_id: number) {
                         <span class="slot-badge">{typeCompLabel[c.type]}</span>
                         <span class="rarete-badge" style="color:{rc}">{rareteLabel[c.rarete]}</span>
                         {#if c.element && c.element !== 'neutre'}
-                        <span class="element-badge" style="color:{ELEMENT_COLORS[c.element]}; border-color:{ELEMENT_COLORS[c.element]}">{ELEMENT_ICONS[c.element]} {c.element}</span>
+                        <span class="element-badge" style="color:{ELEMENT_COLORS[c.element]}; border-color:{ELEMENT_COLORS[c.element]}"><img class="pixel-icon" src={ELEMENT_ICONS[c.element]} alt={c.element} /> {c.element}</span>
                         {/if}
                         {#if pc.est_equipee}<span class="badge-equipe">Équipée</span>{/if}
                     </div>

@@ -48,7 +48,14 @@
     });
 
     onMount(async () => {
-        try { await checkDailyPenalties(1); } catch (e) { console.warn('checkDailyPenalties:', e); }
+        try {
+            const result = await checkDailyPenalties(1);
+            if (result.gameOver) {
+                localStorage.removeItem('donjon_save_1');
+                localStorage.removeItem('donjon_cleared_1');
+                localStorage.removeItem('donjon_best_1');
+            }
+        } catch (e) { console.warn('checkDailyPenalties:', e); }
         await refreshCharacterStore();
         // Onboarding : nom par défaut = 'Héros'
         const { getPersonnage } = await import('$lib/db');
