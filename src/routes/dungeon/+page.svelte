@@ -1,5 +1,6 @@
 <script lang="ts">
     import { onMount } from 'svelte';
+    import { base } from '$app/paths';
     import { beforeNavigate } from '$app/navigation';
     import {
         getPersonnage, getCaracteristique, getInventaire, getStuffs,
@@ -728,7 +729,7 @@
         <div class="comp-block">
             <div class="comp-title">Compétences équipées ({competencesEquipees.length}/6)</div>
             {#if competencesEquipees.length === 0}
-                <p class="vide">Aucune — <a href="/shop" class="lien">achetez-en en boutique</a></p>
+                <p class="vide">Aucune — <a href="{base}/shop" class="lien">achetez-en en boutique</a></p>
             {:else}
                 <div class="comp-grid">
                     {#each competencesEquipees as pc}
@@ -806,7 +807,7 @@
         <!-- Zone joueur : image héros déborde sur monstre, HP en dessous -->
         <div class="zone-joueur">
             <div class="joueur-sprite-wrap">
-                <img class="joueur-img" src="/heroe.png" alt="Héros" />
+                <img class="joueur-img" src="{base}/heroe.png" alt="Héros" />
                 {#if damageAnim?.cible === 'joueur'}<span class="damage-float">-{damageAnim.val}</span>{/if}
             </div>
             <div class="joueur-overlay">

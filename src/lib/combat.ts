@@ -1,3 +1,4 @@
+import { base } from '$app/paths';
 import type { Competence, Element } from './types';
 import type { StatusEffect, BuffEffect } from './types';
 
@@ -88,16 +89,16 @@ const NOMS_MONSTRES = [
 ];
 
 export const MONSTRE_IMAGES: Record<string, string> = {
-    'Slime':     '/monstres/slime.png',
-    'Gobelin':   '/monstres/gobelin.png',
-    'Squelette': '/monstres/squelette.png',
-    'Loup':      '/monstres/loup.png',
-    'Araignée':  '/monstres/araignee.png',
-    'Troll':     '/monstres/troll.png',
-    'Bandit':    '/monstres/bandit.png',
-    'Fantôme':   '/monstres/fantome.png',
-    'Drake':     '/monstres/dragon_feu.png',
-    'Golem':     '/monstres/golem_lumier.png',
+    'Slime':     `${base}/monstres/slime.png`,
+    'Gobelin':   `${base}/monstres/gobelin.png`,
+    'Squelette': `${base}/monstres/squelette.png`,
+    'Loup':      `${base}/monstres/loup.png`,
+    'Araignée':  `${base}/monstres/araignee.png`,
+    'Troll':     `${base}/monstres/troll.png`,
+    'Bandit':    `${base}/monstres/bandit.png`,
+    'Fantôme':   `${base}/monstres/fantome.png`,
+    'Drake':     `${base}/monstres/dragon_feu.png`,
+    'Golem':     `${base}/monstres/golem_lumier.png`,
 };
 
 const ITEMS_INUTILES: Record<string, DonjonItem[]> = {

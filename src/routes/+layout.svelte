@@ -1,5 +1,6 @@
 <script lang="ts">
     import { onMount } from 'svelte';
+    import { base } from '$app/paths';
     import { afterNavigate } from '$app/navigation';
     import { characterStore, refreshCharacterStore } from '$lib/stores';
     import { checkDailyPenalties, renommerPersonnage } from '$lib/db';
@@ -100,25 +101,25 @@
 <!-- Drawer latéral -->
 <nav class="drawer" class:ouvert={drawerOuvert}>
     <div class="drawer-header">Menu</div>
-    <a href="/" onclick={() => drawerOuvert = false}>
-        <img src="/accueil.png" alt="" /> Accueil
+    <a href="{base}/" onclick={() => drawerOuvert = false}>
+        <img src="{base}/accueil.png" alt="" /> Accueil
     </a>
-    <a href="/tasks" onclick={() => drawerOuvert = false}>
-        <img src="/verifier.png" alt="" /> Tâches
+    <a href="{base}/tasks" onclick={() => drawerOuvert = false}>
+        <img src="{base}/verifier.png" alt="" /> Tâches
     </a>
-    <a href="/shop" onclick={() => drawerOuvert = false}>
-        <img src="/magasin.png" alt="" /> Boutique
+    <a href="{base}/shop" onclick={() => drawerOuvert = false}>
+        <img src="{base}/magasin.png" alt="" /> Boutique
     </a>
-    <a href="/dungeon" onclick={() => drawerOuvert = false}>
-        <img src="/donjon.png" alt="" /> Donjon
+    <a href="{base}/dungeon" onclick={() => drawerOuvert = false}>
+        <img src="{base}/donjon.png" alt="" /> Donjon
     </a>
-    <a href="/inventory" onclick={() => drawerOuvert = false}>
-        <img src="/inventaire.png" alt="" /> Sacoche
+    <a href="{base}/inventory" onclick={() => drawerOuvert = false}>
+        <img src="{base}/inventaire.png" alt="" /> Sacoche
     </a>
-    <a href="/stats" onclick={() => drawerOuvert = false}>
-        <img src="/statistique.png" alt="" /> Stats
+    <a href="{base}/stats" onclick={() => drawerOuvert = false}>
+        <img src="{base}/statistique.png" alt="" /> Stats
     </a>
-    <a href="/tuto" onclick={() => drawerOuvert = false}>
+    <a href="{base}/tuto" onclick={() => drawerOuvert = false}>
         Tuto
     </a>
 </nav>
