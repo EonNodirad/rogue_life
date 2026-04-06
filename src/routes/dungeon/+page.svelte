@@ -778,7 +778,7 @@
         <span class="or-chip"><PixelEmoji char="💰" size={14} /> {orDonjon} od</span>
     </div>
 
-    <div class="combat-scene">
+    <div class="combat-scene" style="--bg-combat: url('{base}/fond_donjon/fond_donjon_combat.png')">
         <!-- Zone monstre : image pleine largeur, infos en overlay bas -->
         <div class="zone-monstre">
             <img class="ennemi-img" src={monstreImage(cs.monstre.nom)} alt={cs.monstre.nom} />
@@ -1201,7 +1201,7 @@
         display: flex; 
         flex-direction: column; 
         margin-bottom: 8px; 
-        background-image: url('/fond_donjon/fond_donjon_combat.png');
+        background-image: var(--bg-combat);
         background-size: cover;
         background-position: center bottom;
         background-repeat: no-repeat;
