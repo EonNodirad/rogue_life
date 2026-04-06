@@ -1,17 +1,86 @@
 <script lang="ts">
     import { onMount } from "svelte";
-    import { getPersonnage, getCaracteristique, getLevels, getInventaire, getStuffs, allouerStat, acheterStat, gameOver, changerMode, STAT_SHOP_PRIX, type StatAllouable } from "$lib/db";
+    import { getPersonnage, getCaracteristique, getLevels, getInventaire, getStuffs, allouerStat, acheterStat, gameOver, changerMode, STAT_SHOP_PRIX, getPersonnageAffinites, renommerPersonnage, getTitres, changerTitre, calculerStreak, calculerEtAttribuerTitre, calculerTitresDebloques, type StatAllouable } from "$lib/db";
     import { refreshCharacterStore } from "$lib/stores";
-    import type { Personnage, Caracteristique, Level, stuff, inventaire, GameMode } from "$lib/types";
+    import type { Personnage, Caracteristique, Level, stuff, inventaire, GameMode, PersonnageAffinite, Titre } from "$lib/types";
+    import { ELEMENT_ICONS } from "$lib/icons";
+    import { CLASSES, getBonusCumulatif, getClassesDebloquees, equiperClasse } from "$lib/classes";
 
     let personnage = $state<Personnage | null>(null);
     let carac = $state<Caracteristique | null>(null);
     let levelSuivant = $state<Level | null>(null);
     let equipements = $state<(inventaire & { stuff: stuff })[]>([]);
+    let affinites = $state<PersonnageAffinite[]>([]);
+    let classesDebloquees = $state<number[]>([]);
+    let classeModalOuvert = $state(false);
+    let titreModalOuvert = $state(false);
+    let titres = $state<Titre[]>([]);
+    let titresDebloques = $state<number[]>([1]);
+    let streakActuel = $state(0);
+    let streakRecord = $state(0);
+    let titreActuel = $derived(titres.find(t => t.id === personnage?.titre_id) ?? null);
+    let erreurClasse = $state('');
+
+    const ELEMENTS_RADAR = ['surnaturel','technologie','feu','eau','terre','air','vie','mort','tenebres','lumiere'];
+    const RADAR_CX = 130; const RADAR_CY = 130; const RADAR_R = 80; const RADAR_MAX = 100;
+
+    let affiniteMap = $derived.by(() => {
+        const base: Record<string, number> = Object.fromEntries(affinites.map(a => [a.element, a.bonus_pct]));
+        for (const e of equipements) {
+            if ((e.stuff.bonus_aff_elem ?? 0) > 0 && e.stuff.element && e.stuff.element !== 'neutre') {
+                base[e.stuff.element] = (base[e.stuff.element] ?? 0) + e.stuff.bonus_aff_elem;
+            }
+        }
+        return base;
+    });
+
+    let radarPoints = $derived(ELEMENTS_RADAR.map((el, i) => {
+        const angle = -Math.PI / 2 + i * (2 * Math.PI / 10);
+        const val = Math.min((affiniteMap[el] ?? 0) / RADAR_MAX, 1);
+        return { x: Math.round(RADAR_CX + Math.cos(angle) * RADAR_R * val), y: Math.round(RADAR_CY + Math.sin(angle) * RADAR_R * val) };
+    }));
+
+    let radarAxes = $derived(ELEMENTS_RADAR.map((el, i) => {
+        const angle = -Math.PI / 2 + i * (2 * Math.PI / 10);
+        return {
+            el,
+            x:  Math.round(RADAR_CX + Math.cos(angle) * RADAR_R),
+            y:  Math.round(RADAR_CY + Math.sin(angle) * RADAR_R),
+            ix: Math.round(RADAR_CX + Math.cos(angle) * (RADAR_R + 26)),
+            iy: Math.round(RADAR_CY + Math.sin(angle) * (RADAR_R + 26)),
+        };
+    }));
+
+    const GRID_PCTS = [0.25, 0.5, 0.75, 1];
+    let radarGrid = $derived(GRID_PCTS.map(pct =>
+        ELEMENTS_RADAR.map((_, i) => {
+            const a = -Math.PI / 2 + i * (2 * Math.PI / 10);
+            return `${Math.round(RADAR_CX + Math.cos(a) * RADAR_R * pct)},${Math.round(RADAR_CY + Math.sin(a) * RADAR_R * pct)}`;
+        }).join(' ')
+    ));
+
+    let radarPointsStr = $derived(radarPoints.map(p => `${p.x},${p.y}`).join(' '));
+
+    let classeActuelle = $derived(CLASSES.find(c => c.id === personnage?.classe_id) ?? null);
+    let bonusClasse = $derived(getBonusCumulatif(personnage?.classe_id ?? null));
 
     async function charger() {
         personnage = await getPersonnage(1);
         if (!personnage) return;
+
+        await calculerEtAttribuerTitre(1);
+        titres = await getTitres();
+        titresDebloques = await calculerTitresDebloques(1);
+        const streak = await calculerStreak(1);
+        streakActuel = streak.actuel;
+        streakRecord = streak.record;
+
+        if (personnage.nom === 'Heros') {
+            nomModal = true; nomSaisie = '';
+            localStorage.removeItem('donjon_save_1');
+            localStorage.removeItem('donjon_cleared_1');
+            localStorage.removeItem('donjon_best_1');
+        }
 
         carac = await getCaracteristique(personnage.caracteristique_id);
 
@@ -24,6 +93,9 @@
             .filter(i => i.est_equipe)
             .map(i => ({ ...i, stuff: stuffs.find(s => s.id === i.stuff_id)! }))
             .filter(i => i.stuff);
+
+        try { affinites = await getPersonnageAffinites(1); } catch { affinites = []; }
+        try { classesDebloquees = await getClassesDebloquees(1); } catch { classesDebloquees = []; }
     }
 
     async function allouer(stat: StatAllouable) {
@@ -33,6 +105,17 @@
 
     let erreurStat = $state('');
     let gameOverModal = $state(false);
+
+    // Popup saisie nom
+    let nomModal = $state(false);
+    let nomSaisie = $state('');
+    async function validerNom() {
+        const n = nomSaisie.trim();
+        if (!n) return;
+        await renommerPersonnage(1, n);
+        nomModal = false;
+        await charger();
+    }
 
     // Mode de jeu
     let modeConfirm = $state<GameMode | null>(null);
@@ -99,6 +182,7 @@
         : 0);
     let pvViePct = $derived(carac ? Math.min(100, (carac.pv_vie_actuels / carac.pv_vie_max) * 100) : 0);
     let pvCombatPct = $derived(carac ? Math.min(100, (carac.pv_combat_actuels / carac.pv_combat_max) * 100) : 0);
+    let manaPct = $derived(carac ? Math.min(100, (carac.mana_actuels / Math.max(1, carac.mana_max)) * 100) : 0);
 
     let bonusTotal = $derived(equipements.reduce((acc, e) => ({
         attq:      acc.attq      + (e.stuff.bonus_attq      ?? 0),
@@ -107,7 +191,14 @@
         def_spe:   acc.def_spe   + (e.stuff.bonus_def_spe   ?? 0),
         vitesse:   acc.vitesse   + (e.stuff.bonus_vitesse    ?? 0),
         pv_combat: acc.pv_combat + (e.stuff.bonus_pv_combat  ?? 0),
-    }), { attq: 0, attq_spe: 0, def: 0, def_spe: 0, vitesse: 0, pv_combat: 0 }));
+    }), {
+        attq:      bonusClasse.attq,
+        attq_spe:  bonusClasse.attq_spe,
+        def:       bonusClasse.def,
+        def_spe:   bonusClasse.def_spe,
+        vitesse:   bonusClasse.vit,
+        pv_combat: bonusClasse.pv_max,
+    }));
 </script>
 
 {#if personnage && carac}
@@ -117,7 +208,16 @@
         <div class="avatar"></div>
         <div class="infos">
             <div class="name">{personnage.nom}</div>
-            <div class="meta">Niveau {personnage.level_id} — Classe #{personnage.classe_id} — Titre #{personnage.titre_id}</div>
+            <div class="meta">
+                Niveau {personnage.level_id}
+                — <span class="classe-nom">{classeActuelle?.nom ?? 'Sans classe'}</span>
+                <button class="btn-classe-change" onclick={() => classeModalOuvert = true}>⇄</button>
+                {#if titreActuel}— <span class="titre-nom">✦ {titreActuel.nom}</span>
+                <button class="btn-classe-change" onclick={() => titreModalOuvert = true}>⇄</button>{/if}
+            </div>
+            {#if streakActuel > 0}
+            <div class="streak-line">🔥 {streakActuel}j{#if streakRecord > streakActuel} · rec:{streakRecord}j{/if}</div>
+            {/if}
             <div class="gold">Or : {personnage.gold_actuel}</div>
         </div>
     </div>
@@ -129,6 +229,9 @@
         <div class="barre-label">PV Combat : {carac.pv_combat_actuels} / {carac.pv_combat_max}</div>
         <div class="barre"><div class="barre-fill combat" style="width: {pvCombatPct}%"></div></div>
 
+        <div class="barre-label">Mana : {carac.mana_actuels ?? 0} / {carac.mana_max ?? 150}</div>
+        <div class="barre"><div class="barre-fill mana" style="width: {manaPct}%"></div></div>
+
         <div class="barre-label">XP : {personnage.experience_actuelle} / {levelSuivant?.exp_max_requise ?? '?'}</div>
         <div class="barre"><div class="barre-fill xp" style="width: {xpPct}%"></div></div>
     </div>
@@ -139,6 +242,7 @@
         <div class="levelup-grid">
             {#each [
                 { stat: 'pv_combat_max' as StatAllouable, label: 'PV Combat',  gain: '+5 PV' },
+                { stat: 'mana_max'      as StatAllouable, label: 'Mana',        gain: '+15'   },
                 { stat: 'attq'          as StatAllouable, label: 'ATQ',         gain: '+1'    },
                 { stat: 'attq_spe'      as StatAllouable, label: 'ATQ SPÉ',     gain: '+1'    },
                 { stat: 'def'           as StatAllouable, label: 'DEF',         gain: '+1'    },
@@ -161,6 +265,7 @@
         <div class="levelup-grid">
             {#each [
                 { stat: 'pv_combat_max' as StatAllouable, label: 'PV Combat', gain: '+5 PV', prix: STAT_SHOP_PRIX.pv_combat_max },
+                { stat: 'mana_max'      as StatAllouable, label: 'Mana',       gain: '+15',   prix: STAT_SHOP_PRIX.mana_max      },
                 { stat: 'attq'          as StatAllouable, label: 'ATQ',        gain: '+1',    prix: STAT_SHOP_PRIX.attq          },
                 { stat: 'attq_spe'      as StatAllouable, label: 'ATQ SPÉ',    gain: '+1',    prix: STAT_SHOP_PRIX.attq_spe      },
                 { stat: 'def'           as StatAllouable, label: 'DEF',        gain: '+1',    prix: STAT_SHOP_PRIX.def            },
@@ -232,6 +337,27 @@
         </div>
     </div>
 
+    <div class="section">
+        <h2>Affinités élémentaires</h2>
+        <div class="radar-wrap">
+            <svg width="260" height="260" viewBox="0 0 260 260" shape-rendering="crispEdges">
+                {#each radarGrid as pts, gi}
+                <polygon points={pts} fill="none"
+                    stroke={gi === radarGrid.length - 1 ? '#111' : '#222'}
+                    stroke-width={gi === radarGrid.length - 1 ? 2 : 1} />
+                {/each}
+                {#each radarAxes as ax}
+                <line x1={RADAR_CX} y1={RADAR_CY} x2={ax.x} y2={ax.y} stroke="#222" stroke-width="1" />
+                {/each}
+                <circle cx={RADAR_CX} cy={RADAR_CY} r="4" fill="#e94560" />
+                <polygon points={radarPointsStr} fill="rgba(233,69,96,0.22)" stroke="#e94560" stroke-width="2" stroke-linejoin="miter" />
+                {#each radarAxes as ax}
+                <image href={ELEMENT_ICONS[ax.el] ?? ''} x={ax.ix - 16} y={ax.iy - 16} width="32" height="32" />
+                {/each}
+            </svg>
+        </div>
+    </div>
+
     {#if equipements.length > 0}
     <div class="equipement">
         <h3>Équipement actif</h3>
@@ -269,6 +395,95 @@
             <button class="gameover-btn" onclick={confirmerChangerMode}>Confirmer</button>
             <button class="cancel-btn" onclick={() => modeConfirm = null}>Annuler</button>
         </div>
+    </div>
+</div>
+{/if}
+
+{#if classeModalOuvert}
+<div class="gameover-overlay" onclick={() => classeModalOuvert = false}>
+    <div class="classe-modal" onclick={(e) => e.stopPropagation()}>
+        <div class="classe-modal-titre">Choisir une classe</div>
+        {#if erreurClasse}<div class="classe-err">{erreurClasse}</div>{/if}
+        {#each ['guerrier', 'vagabond', 'sorcier'] as arbre}
+        {@const classesArbre = CLASSES.filter(c =>
+            c.arbre === arbre &&
+            (c.palier === 1 || classesDebloquees.includes(c.id))
+        )}
+        {#if classesArbre.length > 0}
+        <div class="classe-arbre-titre">{arbre === 'guerrier' ? '🗡️ Guerrier' : arbre === 'vagabond' ? '🎒 Vagabond' : '🔮 Sorcier'}</div>
+        {#each classesArbre as c}
+        {@const bonus = getBonusCumulatif(c.id)}
+        <button
+            class="btn-classe"
+            class:classe-active={personnage?.classe_id === c.id}
+            onclick={async () => {
+                erreurClasse = '';
+                try {
+                    await equiperClasse(1, c.id);
+                    await charger();
+                    classeModalOuvert = false;
+                } catch (e: any) {
+                    const msg = e?.message ?? String(e);
+                    console.error('equiperClasse erreur:', msg, e);
+                    erreurClasse = msg;
+                }
+            }}>
+            <div class="classe-btn-nom">{c.nom} <span class="classe-palier">Palier {c.palier}</span></div>
+            <div class="classe-btn-bonus">
+                {#if bonus.attq > 0}ATQ +{bonus.attq} {/if}
+                {#if bonus.def > 0}DEF +{bonus.def} {/if}
+                {#if bonus.attq_spe > 0}ATQ SPÉ +{bonus.attq_spe} {/if}
+                {#if bonus.def_spe > 0}DEF SPÉ +{bonus.def_spe} {/if}
+                {#if bonus.vit > 0}VIT +{bonus.vit} {/if}
+                {#if bonus.pv_max > 0}PV +{bonus.pv_max} {/if}
+                {#if bonus.aff_elem > 0}Élem +{bonus.aff_elem}% {/if}
+            </div>
+        </button>
+        {/each}
+        {/if}
+        {/each}
+        <button class="cancel-btn" onclick={() => classeModalOuvert = false}>Fermer</button>
+    </div>
+</div>
+{/if}
+
+{#if titreModalOuvert}
+<div class="gameover-overlay" onclick={() => titreModalOuvert = false}>
+    <div class="classe-modal" onclick={(e) => e.stopPropagation()}>
+        <div class="classe-modal-titre">Choisir un titre</div>
+        {#each titres.filter(t => titresDebloques.includes(t.id)) as t}
+        <button
+            class="btn-classe"
+            class:classe-active={personnage?.titre_id === t.id}
+            onclick={async () => {
+                await changerTitre(1, t.id);
+                await charger();
+                titreModalOuvert = false;
+            }}>
+            <div class="classe-btn-nom">✦ {t.nom}</div>
+            <div class="classe-btn-bonus">{t.bonus_stat}</div>
+        </button>
+        {/each}
+        <button class="cancel-btn" onclick={() => titreModalOuvert = false}>Fermer</button>
+    </div>
+</div>
+{/if}
+
+{#if nomModal}
+<div class="gameover-overlay">
+    <div class="gameover-modal">
+        <div class="gameover-titre">Bienvenue, héros !</div>
+        <div class="gameover-msg">Quel est ton nom ?</div>
+        <input
+            class="nom-input"
+            type="text"
+            placeholder="Ton nom..."
+            bind:value={nomSaisie}
+            onkeydown={(e) => e.key === 'Enter' && validerNom()}
+        />
+        <button class="gameover-btn" onclick={validerNom} disabled={!nomSaisie.trim()}>
+            Confirmer
+        </button>
     </div>
 </div>
 {/if}
@@ -340,6 +555,7 @@
   }
   .vie    { background-color: #e74c3c; }
   .combat { background-color: #e67e22; }
+  .mana   { background-color: #3498db; }
   .xp     { background-color: #2ecc71; }
   .equipement h3 {
     font-size: 1rem;
@@ -395,22 +611,24 @@
   .stat-grid {
     margin-bottom: 20px;
     display: flex;
-    flex-direction: column;
-    gap: 8px;
+    flex-direction: row;
+    flex-wrap: nowrap;
+    gap: 6px 10px;
   }
   .stat-ligne {
-    display: flex;
-    gap: 16px;
+    display: contents;
   }
   .stat-cell {
     display: flex;
     flex-direction: column;
     gap: 2px;
-    min-width: 80px;
+    flex: 1;
+    min-width: 0;
   }
-  .stat-label { color: #aaa; font-size: 0.72rem; }
-  .stat-val   { font-weight: bold; font-size: 0.9rem; }
+  .stat-label { color: #aaa; font-size: 0.70rem; min-height: 2em; line-height: 1; }
+  .stat-val   { font-weight: bold; font-size: 0.9rem;margin-top: 7px; }
   .stat-bonus { color: #2ecc71; font-size: 0.72rem; }
+  .radar-wrap { display: flex; justify-content: center; }
 
   .stat-shop {
     background: #1a1a2e; border: 1px solid #555;
@@ -492,4 +710,52 @@
     font-family: var(--font); margin-top: 4px;
   }
   .gameover-btn:hover { background: #c0392b; }
+  .gameover-btn:disabled { background: #666; cursor: not-allowed; }
+  .nom-input {
+    width: 100%; box-sizing: border-box;
+    background: #1a1a2e; color: #eee; border: 1px solid #444;
+    border-radius: 8px; padding: 10px 14px;
+    font-size: 1rem; font-family: var(--font);
+    margin-top: 4px;
+  }
+  .nom-input:focus { outline: none; border-color: #f39c12; }
+
+  /* Modal classe */
+  .classe-modal {
+    background: #16213e; border: 2px solid #f39c12;
+    padding: 20px 16px; max-width: 320px; width: 94%;
+    max-height: 80vh; overflow-y: auto;
+    display: flex; flex-direction: column; gap: 8px;
+    animation: fadeInScale 0.3s ease;
+  }
+  .classe-modal-titre {
+    font-size: 0.9rem; font-weight: bold; color: #f39c12;
+    text-align: center; margin-bottom: 4px;
+  }
+  .classe-arbre-titre {
+    font-size: 0.7rem; color: #aaa; margin-top: 8px; margin-bottom: 2px;
+    border-bottom: 1px solid #333; padding-bottom: 4px;
+  }
+  .btn-classe {
+    width: 100%; background: #0f3460; border: 1px solid #555;
+    padding: 8px 10px; cursor: pointer; font-family: var(--font);
+    text-align: left; display: flex; flex-direction: column; gap: 3px;
+    transition: background 0.15s;
+  }
+  .btn-classe:hover { background: #1a4a80; }
+  .btn-classe.classe-active { border-color: #f39c12; background: #1a3a6a; }
+  .classe-btn-nom { font-size: 0.68rem; color: #eee; }
+  .classe-palier { font-size: 0.58rem; color: #888; margin-left: 6px; }
+  .classe-btn-bonus { font-size: 0.60rem; color: #2ecc71; }
+
+  .classe-err { font-size: 0.62rem; color: #e74c3c; text-align: center; }
+  .classe-nom { color: #f39c12; }
+  .titre-nom { color: #9b59b6; }
+  .streak-line { font-size: 0.78rem; color: #f39c12; margin-top: 2px; }
+  .btn-classe-change {
+    background: none; border: 1px solid #f39c12; color: #f39c12;
+    font-size: 0.65rem; padding: 1px 5px; cursor: pointer;
+    font-family: var(--font); margin-left: 4px; vertical-align: middle;
+  }
+  .btn-classe-change:hover { background: #f39c1222; }
 </style>

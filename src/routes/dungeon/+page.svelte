@@ -5,6 +5,7 @@
         getPersonnage, getCaracteristique, getInventaire, getStuffs,
         getPersonnageCompetences, ajouterRecompenseDonjon, resetPvCombat, updatePvCombat,
         getCompetencesDonjon, getPersonnageAffinites, incrementerLootDonjon,
+        updateManaActuels, regenMana,
     } from '$lib/db';
     import { piocherLoot } from '$lib/loot';
     import type { LootOption } from '$lib/loot';
@@ -15,39 +16,80 @@
     } from '$lib/combat';
     import type { Competence, PersonnageCompetence, stuff, Element, Rarete } from '$lib/types';
     import { ELEMENT_ICONS } from '$lib/icons';
+    import PixelEmoji from '$lib/PixelEmoji.svelte';
+    import { CLASSES, getBonusCumulatif, debloquerClasse, type ClasseDef } from '$lib/classes';
 
     // ── Gacha ────────────────────────────────────────────────────────────────
     interface BonusDonjon {
-        id: string
-        label: string
-        description: string
-        type: 'affinite' | 'stat' | 'pv_max'
-        element?: string
-        stat?: 'attq' | 'def' | 'attq_spe' | 'def_spe'
-        valeur: number
+        id: string;
+        label: string;
+        description: string;
+        type: 'affinite' | 'stat' | 'pv_max';
+        rarete: Rarete;
+        element?: string;
+        stat?: 'attq' | 'def' | 'attq_spe' | 'def_spe' | 'vitesse';
+        valeur: number; // toujours un %
     }
 
-    const GACHA_POOL: BonusDonjon[] = [
-        { id: 'attq+8',      label: '⚔ Rage Guerrière',    description: '+8 ATQ pour cette run',        type: 'stat',    stat: 'attq',    valeur: 8  },
-        { id: 'def+8',       label: '🛡 Peau de Pierre',    description: '+8 DEF pour cette run',        type: 'stat',    stat: 'def',     valeur: 8  },
-        { id: 'attq_spe+8',  label: '✨ Génie Arcanique',   description: '+8 ATQ SPÉ pour cette run',    type: 'stat',    stat: 'attq_spe', valeur: 8  },
-        { id: 'def_spe+8',   label: '🔮 Bouclier Mystique', description: '+8 DEF SPÉ pour cette run',    type: 'stat',    stat: 'def_spe', valeur: 8  },
-        { id: 'pv+20',       label: '💗 Vitalité+',         description: '+20% PV Combat max',           type: 'pv_max',                   valeur: 20 },
-        { id: 'attq+15',     label: '⚔ Berserk',            description: '+15 ATQ, -5 DEF',              type: 'stat',    stat: 'attq',    valeur: 15 },
-        { id: 'feu+25',      label: '🔥 Affinité Feu',       description: '+25% dégâts Feu',              type: 'affinite', element: 'feu',         valeur: 25 },
-        { id: 'eau+25',      label: '💧 Affinité Eau',       description: '+25% dégâts Eau',              type: 'affinite', element: 'eau',         valeur: 25 },
-        { id: 'terre+25',    label: '🪨 Affinité Terre',     description: '+25% dégâts Terre',            type: 'affinite', element: 'terre',       valeur: 25 },
-        { id: 'feu+25b',     label: '🔥 Maîtrise du Feu',    description: '+40% dégâts Feu, -10 DEF',    type: 'affinite', element: 'feu',         valeur: 40 },
-        { id: 'lumiere+25',  label: '☀️ Lumière Sacrée',     description: '+25% dégâts Lumière',          type: 'affinite', element: 'lumiere',     valeur: 25 },
-        { id: 'tenebres+25', label: '🌑 Ombre Éternelle',    description: '+25% dégâts Ténèbres',         type: 'affinite', element: 'tenebres',    valeur: 25 },
-        { id: 'mort+25',     label: '💀 Pacte de Mort',      description: '+25% dégâts Mort',             type: 'affinite', element: 'mort',        valeur: 25 },
-        { id: 'vie+25',      label: '🌿 Harmonie Naturelle', description: '+25% dégâts Vie',              type: 'affinite', element: 'vie',         valeur: 25 },
-        { id: 'air+25',      label: '🌪 Tempête',            description: '+25% dégâts Air',              type: 'affinite', element: 'air',         valeur: 25 },
-        { id: 'pv+35',       label: '💗 Titan',              description: '+35% PV Combat max',           type: 'pv_max',                   valeur: 35 },
+    // Taux de drop [commun, peu_commun, rare, epique, legendaire]
+    const GACHA_TAUX: Record<'peu_commun' | 'rare', number[]> = {
+        peu_commun: [0.40, 0.40, 0.18, 0.02, 0.00],
+        rare:       [0.15, 0.35, 0.35, 0.14, 0.01],
+    };
+    const GACHA_RARETES: Rarete[] = ['commun', 'peu_commun', 'rare', 'epique', 'legendaire'];
+    const GACHA_VALEUR: Record<Rarete, number> = { commun: 5, peu_commun: 10, rare: 15, epique: 20, legendaire: 25 };
+
+    const GACHA_STATS = [
+        { id: 'attq',     label: '⚔️ ATQ',     type: 'stat' as const, stat: 'attq'     as const },
+        { id: 'def',      label: '🛡️ DEF',     type: 'stat' as const, stat: 'def'      as const },
+        { id: 'attq_spe', label: '✨ ATQ SPÉ', type: 'stat' as const, stat: 'attq_spe' as const },
+        { id: 'def_spe',  label: '🔮 DEF SPÉ', type: 'stat' as const, stat: 'def_spe'  as const },
+        { id: 'vitesse',  label: '💨 VIT',     type: 'stat' as const, stat: 'vitesse'  as const },
+        { id: 'pv_max',   label: '💗 PV max',  type: 'pv_max' as const },
+    ];
+    const GACHA_ELEMS = [
+        { id: 'feu',         label: '🔥 Feu',         element: 'feu'         },
+        { id: 'eau',         label: '💧 Eau',         element: 'eau'         },
+        { id: 'terre',       label: '🪨 Terre',       element: 'terre'       },
+        { id: 'air',         label: '🌪️ Air',         element: 'air'         },
+        { id: 'lumiere',     label: '☀️ Lumière',     element: 'lumiere'     },
+        { id: 'tenebres',    label: '🌑 Ténèbres',    element: 'tenebres'    },
+        { id: 'mort',        label: '💀 Mort',        element: 'mort'        },
+        { id: 'vie',         label: '🌿 Vie',         element: 'vie'         },
+        { id: 'surnaturel',  label: '🌀 Surnaturel',  element: 'surnaturel'  },
+        { id: 'technologie', label: '⚙️ Techno',     element: 'technologie' },
     ];
 
+    function tirerRareteGacha(etageActuel: number): Rarete {
+        const taux = etageActuel >= 3 ? GACHA_TAUX.rare : GACHA_TAUX.peu_commun;
+        const r = Math.random();
+        let cumul = 0;
+        for (let i = 0; i < GACHA_RARETES.length; i++) {
+            cumul += taux[i];
+            if (r < cumul) return GACHA_RARETES[i];
+        }
+        return 'commun';
+    }
+
+    function genererUnBonus(rarete: Rarete, exclus: string[]): BonusDonjon {
+        const valeur = GACHA_VALEUR[rarete];
+        const pool = [...GACHA_STATS, ...GACHA_ELEMS].filter(e => !exclus.includes(e.id));
+        const src = pool[Math.floor(Math.random() * pool.length)];
+        if ('stat' in src && src.type === 'stat') {
+            return { id: src.id, label: src.label, type: 'stat', rarete, stat: src.stat, valeur,
+                description: `+${valeur}% ${src.label.split(' ').slice(1).join(' ')}` };
+        } else if ('type' in src && src.type === 'pv_max') {
+            return { id: src.id, label: src.label, type: 'pv_max', rarete, valeur,
+                description: `+${valeur}% PV Combat max` };
+        } else {
+            const e = src as typeof GACHA_ELEMS[0];
+            return { id: e.id, label: e.label, type: 'affinite', rarete, element: e.element, valeur,
+                description: `+${valeur}% affinité ${e.label.split(' ').slice(1).join(' ')}` };
+        }
+    }
+
     // ── État global donjon ──────────────────────────────────────────────────
-    type Phase = 'lobby' | 'combat' | 'inter_salle' | 'ravito' | 'gacha' | 'loot_box' | 'mort';
+    type Phase = 'lobby' | 'combat' | 'inter_salle' | 'ravito' | 'gacha' | 'loot_box' | 'donjon_shop' | 'mort';
 
     let phase = $state<Phase>('lobby');
     let etage = $state(1);
@@ -89,6 +131,8 @@
 
     let pvCombatActuels = $state(0);
     let pvCombatMax = $state(1);
+    let manaActuels = $state(0);
+    let manaMax = $state(150);
     let nomJoueur = $state('Héros');
     let niveauJoueur = $state(1);
     let elementJoueur = $state<Element>('neutre');
@@ -102,17 +146,31 @@
 
     let ownedCompIds = $state<number[]>([]);    // comps possédées par le joueur
     let etageEnCours = $state(false);           // entre deux étages (pas nouvelle run)
+    let classeIdJoueur = $state<number | null>(null);
+    let classeUnlockChoix = $state<ClasseDef[]>([]);
+    let classeUnlockModal = $state(false);
+    let classeUnlockErreur = $state('');
 
     async function chargerPerso() {
         const p = await getPersonnage(1);
         if (!p) return;
+
+        // Si la DB a été effacée (compteur_loot_donjon = 0) mais localStorage a des étages marqués → reset
+        if ((p.compteur_loot_donjon ?? 0) === 0) {
+            const raw = localStorage.getItem(CLEARED_KEY);
+            if (raw && JSON.parse(raw).length > 0) localStorage.removeItem(CLEARED_KEY);
+        }
+
         nomJoueur = p.nom;
         niveauJoueur = p.level_id;
+        classeIdJoueur = p.classe_id ?? null;
 
         const c = await getCaracteristique(p.caracteristique_id);
         if (!c) return;
         pvCombatActuels = c.pv_combat_actuels;
         pvCombatMax = c.pv_combat_max;
+        manaActuels = c.mana_actuels ?? 150;
+        manaMax = c.mana_max ?? 150;
 
         const inv = await getInventaire(1);
         const stuffs = await getStuffs();
@@ -121,15 +179,31 @@
             .map(i => stuffs.find(s => s.id === i.stuff_id)!)
             .filter(Boolean) as stuff[];
 
-        attqJoueur    = c.attq    + equipes.reduce((s, st) => s + (st.bonus_attq ?? 0), 0);
-        attqSpeJoueur = c.attq_spe + equipes.reduce((s, st) => s + (st.bonus_attq_spe ?? 0), 0);
-        defJoueur     = c.def     + equipes.reduce((s, st) => s + (st.bonus_def ?? 0), 0);
-        defSpeJoueur  = c.def_spe + equipes.reduce((s, st) => s + (st.bonus_def_spe ?? 0), 0);
-        vitesseJoueur = c.vitesse + equipes.reduce((s, st) => s + (st.bonus_vitesse ?? 0), 0);
+        const bonusClasse = getBonusCumulatif(p.classe_id ?? null);
+        attqJoueur    = c.attq    + equipes.reduce((s, st) => s + (st.bonus_attq ?? 0), 0)    + bonusClasse.attq;
+        attqSpeJoueur = c.attq_spe + equipes.reduce((s, st) => s + (st.bonus_attq_spe ?? 0), 0) + bonusClasse.attq_spe;
+        defJoueur     = c.def     + equipes.reduce((s, st) => s + (st.bonus_def ?? 0), 0)     + bonusClasse.def;
+        defSpeJoueur  = c.def_spe + equipes.reduce((s, st) => s + (st.bonus_def_spe ?? 0), 0)  + bonusClasse.def_spe;
+        vitesseJoueur = c.vitesse + equipes.reduce((s, st) => s + (st.bonus_vitesse ?? 0), 0)  + bonusClasse.vit;
+        if (bonusClasse.pv_max > 0) pvCombatMax = c.pv_combat_max + bonusClasse.pv_max;
 
         try {
             const affinites = await getPersonnageAffinites(1);
-            affinitesJoueur = Object.fromEntries(affinites.map(a => [a.element, a.bonus_pct]));
+            const baseAffinites = Object.fromEntries(affinites.map(a => [a.element, a.bonus_pct]));
+            // Appliquer bonus aff_elem de la classe (cumul sur tous éléments)
+            const bonusC = getBonusCumulatif(p.classe_id ?? null);
+            if (bonusC.aff_elem > 0) {
+                for (const el of Object.keys(baseAffinites)) {
+                    baseAffinites[el] = (baseAffinites[el] ?? 0) + bonusC.aff_elem;
+                }
+            }
+            // Appliquer bonus affinité élémentaire des équipements équipés
+            for (const eq of equipes) {
+                if ((eq.bonus_aff_elem ?? 0) > 0 && eq.element && eq.element !== 'neutre') {
+                    baseAffinites[eq.element] = (baseAffinites[eq.element] ?? 0) + eq.bonus_aff_elem;
+                }
+            }
+            affinitesJoueur = baseAffinites;
         } catch { /* migration 0008 pas encore appliquée */ }
 
         try {
@@ -144,7 +218,7 @@
     const SAVE_KEY = 'donjon_save_1';
 
     function sauvegarderProgression() {
-        const save = { etage, salle, orDonjon, bonusDonjonActifs, itemsDonjon, inventaireDonjon, pvCombatActuels, pvCombatMax, phase, lootBoxRarete };
+        const save = { etage, salle, orDonjon, bonusDonjonActifs, itemsDonjon, inventaireDonjon, pvCombatActuels, pvCombatMax, manaActuels, manaMax, phase, lootBoxRarete };
         localStorage.setItem(SAVE_KEY, JSON.stringify(save));
     }
 
@@ -161,6 +235,8 @@
             inventaireDonjon   = s.inventaireDonjon ?? [];
             if (s.pvCombatMax) pvCombatMax = s.pvCombatMax;
             if (s.pvCombatActuels != null) pvCombatActuels = s.pvCombatActuels;
+            if (s.manaMax) manaMax = s.manaMax;
+            if (s.manaActuels != null) manaActuels = s.manaActuels;
             if (s.lootBoxRarete) lootBoxRarete = s.lootBoxRarete;
             return { savedPhase: s.phase ?? 'lobby' };
         } catch { return { savedPhase: 'lobby' }; }
@@ -221,7 +297,7 @@
 
     // Auto-sauvegarder au départ de la page si une run est en cours
     beforeNavigate(() => {
-        if (salle > 0 && phase !== 'mort') {
+        if ((salle > 0 || etageEnCours) && phase !== 'mort') {
             sauvegarderProgression();
             aSauvegarde = true;
         }
@@ -238,10 +314,13 @@
         } else if (savedPhase === 'gacha') {
             genererGachaChoix();
             phase = 'gacha';
-        } else if (savedPhase === 'ravito' || savedPhase === 'inter_salle') {
+        } else if (savedPhase === 'ravito' || savedPhase === 'inter_salle' || savedPhase === 'donjon_shop') {
             phase = savedPhase;
+        } else if (savedPhase === 'lobby') {
+            // Entre deux étages (salle=0) : lancer la salle 1 du nouvel étage
+            lancerSalle();
         } else {
-            // combat ou lobby → relancer le combat à la salle sauvegardée SANS incrémenter
+            // combat → relancer à la salle sauvegardée SANS incrémenter
             lancerCombat();
         }
     }
@@ -272,26 +351,34 @@
 
     function appliquerBonusSurStats(): {
         attq: number; attqSpe: number; def: number; defSpe: number;
-        pvMax: number; affinites: Partial<Record<string, number>>
+        vitesse: number; pvMax: number; affinites: Partial<Record<string, number>>
     } {
-        let attq = attqJoueur, attqSpe = attqSpeJoueur;
-        let def = defJoueur, defSpe = defSpeJoueur;
-        let pvMax = pvCombatMax;
+        // valeurs de base (avant bonus gacha)
+        const baseAttq    = attqJoueur;
+        const baseAttqSpe = attqSpeJoueur;
+        const baseDef     = defJoueur;
+        const baseDefSpe  = defSpeJoueur;
+        const baseVit     = vitesseJoueur;
+
+        let attq    = baseAttq,    attqSpe = baseAttqSpe;
+        let def     = baseDef,     defSpe  = baseDefSpe;
+        let vitesse = baseVit;
+        let pvMax   = pvCombatMax;
         const affinites: Partial<Record<string, number>> = { ...affinitesJoueur };
 
         for (const b of bonusDonjonActifs) {
             if (b.type === 'stat') {
-                if (b.stat === 'attq')    attq    += b.valeur;
-                if (b.stat === 'def')     def     += b.valeur;
-                if (b.stat === 'attq_spe') attqSpe += b.valeur;
-                if (b.stat === 'def_spe') defSpe  += b.valeur;
-            } else if (b.type === 'pv_max') {
-                pvMax = Math.floor(pvMax * (1 + b.valeur / 100));
+                const pct = b.valeur / 100;
+                if (b.stat === 'attq')     attq    += Math.floor(baseAttq    * pct);
+                if (b.stat === 'def')      def     += Math.floor(baseDef     * pct);
+                if (b.stat === 'attq_spe') attqSpe += Math.floor(baseAttqSpe * pct);
+                if (b.stat === 'def_spe')  defSpe  += Math.floor(baseDefSpe  * pct);
+                if (b.stat === 'vitesse')  vitesse += Math.floor(baseVit     * pct);
             } else if (b.type === 'affinite' && b.element) {
                 affinites[b.element] = (affinites[b.element] ?? 0) + b.valeur;
             }
         }
-        return { attq, attqSpe, def, defSpe, pvMax, affinites };
+        return { attq, attqSpe, def, defSpe, vitesse, pvMax, affinites };
     }
 
     function lancerCombat() {
@@ -300,7 +387,8 @@
         const monstre = genererMonstre(etage, salle);
         combatState = initCombat(
             nomJoueur, pvCombatActuels, stats.pvMax,
-            stats.attq, stats.attqSpe, stats.def, stats.defSpe, vitesseJoueur,
+            manaActuels, manaMax,
+            stats.attq, stats.attqSpe, stats.def, stats.defSpe, stats.vitesse,
             niveauJoueur, elementJoueur, stats.affinites,
             monstre,
         );
@@ -314,11 +402,13 @@
     }
 
     function genererGachaChoix() {
-        const pool = [...GACHA_POOL];
         const choix: BonusDonjon[] = [];
-        while (choix.length < 3 && pool.length > 0) {
-            const i = Math.floor(Math.random() * pool.length);
-            choix.push(pool.splice(i, 1)[0]);
+        const exclus: string[] = [];
+        while (choix.length < 3) {
+            const rarete = tirerRareteGacha(etage);
+            const bonus = genererUnBonus(rarete, exclus);
+            choix.push(bonus);
+            exclus.push(bonus.id);
         }
         gachaChoix = choix;
     }
@@ -361,10 +451,12 @@
         if (!state.termine) return;
         if (state.vainqueur === 'joueur') {
             pvCombatActuels = state.joueur.pv_actuels;
-            const loot = lootMonstre(etage, salle);
+            manaActuels = state.joueur.mana;
+            const loot = lootMonstre(etage, salle, state.monstre.nom);
             itemsDonjon = loot.items;
             orDonjon += loot.or_base;
             updatePvCombat(1, pvCombatActuels);
+            updateManaActuels(1, manaActuels);
             mettreAJourMeilleurScore();
             if (salle === 5) {
                 const soin = Math.floor(pvCombatMax * 0.3);
@@ -449,7 +541,44 @@
         await chargerPerso();
         pvCombatMax = pvCombatMaxAvecBonus(pvCombatMax);
         pvCombatActuels = Math.min(pvCombatActuels, pvCombatMax);
+        // Régénération 50% mana au début de chaque nouvel étage
+        const manaRegen = Math.floor(manaMax * 0.5);
+        manaActuels = Math.min(manaMax, manaActuels + manaRegen);
+        await regenMana(1, manaRegen);
+
+        // Unlock de classe à l'étage 4 (depuis palier 1) et 7 (depuis palier 4)
+        if ((etage === 4 || etage === 7) && classeIdJoueur) {
+            const classeActuelle = CLASSES.find(c => c.id === classeIdJoueur);
+            const palierRequis = etage === 4 ? 1 : 4;
+            if (classeActuelle && classeActuelle.palier === palierRequis) {
+                const enfants = CLASSES.filter(c => c.parent_id === classeIdJoueur);
+                if (enfants.length > 0) {
+                    classeUnlockChoix = enfants;
+                    classeUnlockModal = true;
+                    return; // attendre le choix avant de retourner au lobby
+                }
+            }
+        }
+
         phase = 'lobby';
+        sauvegarderProgression();
+        aSauvegarde = true;
+    }
+
+    async function choisirClasseUnlock(c: ClasseDef) {
+        classeUnlockErreur = '';
+        try {
+            await debloquerClasse(1, c.id);
+            classeUnlockModal = false;
+            classeUnlockChoix = [];
+            phase = 'lobby';
+            sauvegarderProgression();
+            aSauvegarde = true;
+        } catch (e: any) {
+            const msg = e?.message ?? String(e);
+            console.error('choisirClasseUnlock erreur:', msg, e);
+            classeUnlockErreur = msg;
+        }
     }
 
     // ── Inter-salle ─────────────────────────────────────────────────────────
@@ -480,9 +609,21 @@
             const soin = Math.floor(pvCombatMax * (item.effet.valeur! / 100));
             pvCombatActuels = Math.min(pvCombatMax, pvCombatActuels + soin);
             updatePvCombat(1, pvCombatActuels);
+        } else if (item.effet?.type === 'mana_pct') {
+            const gain = Math.floor(manaMax * (item.effet.valeur! / 100));
+            manaActuels = Math.min(manaMax, manaActuels + gain);
+            updateManaActuels(1, manaActuels);
         }
         inventaireDonjon = inventaireDonjon.filter(i => i !== item);
         sauvegarderProgression();
+    }
+
+    function acheterElixirMana() {
+        if (orDonjon < 20 || manaActuels >= manaMax) return;
+        orDonjon -= 20;
+        const gain = Math.floor(manaMax * 0.20);
+        manaActuels = Math.min(manaMax, manaActuels + gain);
+        updateManaActuels(1, manaActuels);
     }
 
     function acheterConsommable(item: DonjonItem) {
@@ -505,11 +646,21 @@
         updatePvCombat(1, pvCombatActuels);
     }
 
+
     function continuerSalle() {
         lancerSalle();
     }
 
     // ── Helpers ─────────────────────────────────────────────────────────────
+    function statutEmoji(type: string): string {
+        const map: Record<string, string> = {
+            poison: '☠', stun: '💫', brulure: '🔥', froid: '❄️',
+            regen_pv: '💚', anti_heal: '🚫', marque: '💣',
+            riposte: '🛡', reduction_degats: '🛡', prochain_attq_mult: '⚡',
+        };
+        return map[type] ?? '✦';
+    }
+
     function pvPct(unit: CombatUnit) {
         return Math.max(0, Math.round((unit.pv_actuels / unit.pv_max) * 100));
     }
@@ -520,6 +671,9 @@
         return '#e74c3c';
     }
 
+    const RARETE_LABEL: Record<string, string> = {
+        commun: 'Commun', peu_commun: 'Peu commun', rare: 'Rare', epique: 'Épique', legendaire: 'Légendaire'
+    };
     const RARETE_COLORS: Record<string, string> = {
         commun: '#aaa', peu_commun: '#2ecc71', rare: '#3498db', epique: '#9b59b6', legendaire: '#f39c12',
     };
@@ -548,9 +702,16 @@
             </div>
             <span class="stat-val">{pvCombatActuels}/{pvCombatMax}</span>
         </div>
+        <div class="stat-row">
+            <span class="stat-label">Mana</span>
+            <div class="barre-wrap">
+                <div class="barre mana-barre" style="width:{Math.round(manaActuels/manaMax*100)}%"></div>
+            </div>
+            <span class="stat-val">{manaActuels}/{manaMax}</span>
+        </div>
 
         {#if orDonjon > 0}
-        <div class="or-donjon">💰 Or donjon : {orDonjon}</div>
+        <div class="or-donjon"><PixelEmoji char="💰" size={14} /> Or donjon : {orDonjon}</div>
         {/if}
 
         {#if bonusDonjonActifs.length > 0}
@@ -584,7 +745,11 @@
         {#if aSauvegarde}
         {@const raw = JSON.parse(localStorage.getItem(SAVE_KEY) ?? '{}')}
         <button class="btn-entrer" onclick={reprendre}>
+            {#if (raw.salle ?? 0) === 0}
+            ▶ Entrer {labelEtage(raw.etage ?? 1)}
+            {:else}
             ▶ Reprendre ({labelEtage(raw.etage ?? 1)}, Salle {raw.salle}/10)
+            {/if}
         </button>
         <button class="btn-recommencer" onclick={entrerDonjon}>
             🔄 Nouvelle run (Étage 1)
@@ -609,7 +774,7 @@
 
     <div class="combat-header">
         <span class="salle-badge">{labelEtage(etage)} · Salle {salle}/10</span>
-        <span class="or-chip">💰 {orDonjon} od</span>
+        <span class="or-chip"><PixelEmoji char="💰" size={14} /> {orDonjon} od</span>
     </div>
 
     <div class="combat-scene">
@@ -620,14 +785,19 @@
             <div class="info-overlay monstre-overlay">
                 <div class="unit-plaque-nom">{cs.monstre.nom} Lv{cs.monstre.niveau}</div>
                 <div class="hp-row">
-                    <span class="hp-coeur">❤</span>
+                    <span class="hp-coeur"><PixelEmoji char="❤" size={12} /></span>
                     <div class="hp-track"><div class="hp-fill" style="width:{pvPct(cs.monstre)}%; color:{pvColor(pvPct(cs.monstre))}"></div></div>
                     <span class="hp-nums">{cs.monstre.pv_actuels}/{cs.monstre.pv_max}</span>
                 </div>
+                <div class="hp-row">
+                    <span class="hp-coeur atb-icon">⚡</span>
+                    <div class="hp-track"><div class="hp-fill atb-fill-monstre" style="width:{cs.gauge_monstre}%"></div></div>
+                    <span class="hp-nums">{Math.round(cs.gauge_monstre)}/100</span>
+                </div>
                 {#if cs.monstre.statuts.length || cs.monstre.buffs.length}
                 <div class="statuts-row">
-                    {#each cs.monstre.statuts as st}<span class="statut-chip">{st.type === 'poison' ? '☠' : '💫'} {st.tours_restants}t</span>{/each}
-                    {#each cs.monstre.buffs as b}<span class="buff-chip">↑{b.stat} {b.tours_restants}t</span>{/each}
+                    {#each cs.monstre.statuts as st}<span class="statut-chip statut-{st.type}"><PixelEmoji char={statutEmoji(st.type)} size={12} /> {st.tours_restants === 99 ? '∞' : st.tours_restants+'t'}{st.valeur ? ' '+st.valeur : ''}</span>{/each}
+                    {#each cs.monstre.buffs as b}<span class="buff-chip {b.valeur < 0 ? 'debuff-chip' : ''}">{b.valeur < 0 ? '↓' : '↑'}{b.stat} {b.tours_restants}t</span>{/each}
                 </div>
                 {/if}
             </div>
@@ -642,14 +812,26 @@
             <div class="joueur-overlay">
                 <div class="unit-plaque-nom">{cs.joueur.nom} Lv{cs.joueur.niveau}</div>
                 <div class="hp-row">
-                    <span class="hp-coeur">❤</span>
+                    <span class="hp-coeur"><PixelEmoji char="❤" size={12} /></span>
                     <div class="hp-track"><div class="hp-fill" style="width:{pvPct(cs.joueur)}%; color:{pvColor(pvPct(cs.joueur))}"></div></div>
                     <span class="hp-nums">{cs.joueur.pv_actuels}/{cs.joueur.pv_max}</span>
                 </div>
-                {#if cs.joueur.statuts.length || cs.joueur.buffs.length}
+                <div class="hp-row">
+                    <span class="hp-coeur" style="color:#3498db">💧</span>
+                    <div class="hp-track"><div class="hp-fill mana-fill" style="width:{Math.round(cs.joueur.mana/Math.max(1,cs.joueur.mana_max)*100)}%"></div></div>
+                    <span class="hp-nums">{cs.joueur.mana}/{cs.joueur.mana_max}</span>
+                </div>
+                <div class="hp-row">
+                    <span class="hp-coeur atb-icon">⚡</span>
+                    <div class="hp-track"><div class="hp-fill atb-fill-joueur" style="width:{cs.gauge_joueur}%"></div></div>
+                    <span class="hp-nums">{Math.round(cs.gauge_joueur)}/100</span>
+                </div>
+                {#if cs.joueur.statuts.length || cs.joueur.buffs.length || cs.joueur.surchauffe > 0 || cs.joueur.charges_sismiques > 0}
                 <div class="statuts-row">
-                    {#each cs.joueur.statuts as st}<span class="statut-chip">{st.type === 'poison' ? '☠' : '💫'} {st.tours_restants}t</span>{/each}
-                    {#each cs.joueur.buffs as b}<span class="buff-chip">↑{b.stat} {b.tours_restants}t</span>{/each}
+                    {#each cs.joueur.statuts as st}<span class="statut-chip statut-{st.type}"><PixelEmoji char={statutEmoji(st.type)} size={12} /> {st.tours_restants === 99 ? '∞' : st.tours_restants+'t'}{st.valeur ? ' '+st.valeur : ''}</span>{/each}
+                    {#each cs.joueur.buffs as b}<span class="buff-chip {b.valeur < 0 ? 'debuff-chip' : ''}">{b.valeur < 0 ? '↓' : '↑'}{b.stat} {b.tours_restants}t</span>{/each}
+                    {#if cs.joueur.surchauffe > 0}<span class="statut-chip statut-surchauffe">⚙️ {cs.joueur.surchauffe}/5</span>{/if}
+                    {#if cs.joueur.charges_sismiques > 0}<span class="statut-chip statut-sismique">⛏️ ×{cs.joueur.charges_sismiques}</span>{/if}
                 </div>
                 {/if}
             </div>
@@ -671,16 +853,20 @@
             <img class="pixel-icon" src={ELEMENT_ICONS['neutre']} alt="normal" /> ATTAQUE
         </button>
         {#each competencesEquipees as pc}
+        {@const coutMana = pc.competence.cout_mana === -1 ? (combatState?.joueur.mana ?? 0) : (pc.competence.cout_mana ?? 0)}
+        {@const manaInsuffisant = (combatState?.joueur.mana ?? 0) < coutMana}
         <button class="btn-nes competence"
             style="--elem-color:{ELEMENT_COLORS[pc.competence.element] ?? '#3498db'}"
             onclick={() => agir({ type: 'competence', competence: pc.competence })}
-            disabled={combatBloquer}>
+            disabled={combatBloquer || manaInsuffisant}
+            title={manaInsuffisant ? `Mana insuffisant (${combatState?.joueur.mana}/${coutMana})` : ''}>
             <img class="pixel-icon" src={ELEMENT_ICONS[pc.competence.element] ?? ''} alt={pc.competence.element} /> {pc.competence.nom}
+            {#if coutMana > 0}<span class="mana-cost">💧{coutMana}</span>{/if}
         </button>
         {/each}
-        {#each inventaireDonjon.filter(i => i.usage === 'combat') as item}
+        {#each inventaireDonjon.filter(i => i.usage === 'combat' || i.usage === 'les_deux') as item}
         <button class="btn-nes consommable-btn" onclick={() => utiliserConsommableEnCombat(item)} disabled={combatBloquer}>
-            ⚗️ {item.nom}
+            <PixelEmoji char="⚗️" size={14} /> {item.nom}
         </button>
         {/each}
     </div>
@@ -695,7 +881,7 @@
             <div class="victoire-titre">✅ Monstre vaincu !</div>
         {/if}
 
-        <div class="salle-info">{labelEtage(etage)} · Salle {salle}/10 · 💰 {orDonjon} od</div>
+        <div class="salle-info">{labelEtage(etage)} · Salle {salle}/10 · <PixelEmoji char="💰" size={14} /> {orDonjon} od</div>
 
         <div class="pv-inter">
             <span class="hp-coeur">❤</span>
@@ -703,6 +889,11 @@
                 <div class="hp-fill" style="width:{Math.round(pvCombatActuels/pvCombatMax*100)}%; color:{pvColor(Math.round(pvCombatActuels/pvCombatMax*100))}"></div>
             </div>
             <span class="hp-nums">{pvCombatActuels}/{pvCombatMax}</span>
+        </div>
+        <div class="pv-inter">
+            <span class="hp-coeur" style="color:#3498db">💧</span>
+            <div class="hp-track"><div class="hp-fill mana-fill" style="width:{Math.round(manaActuels/Math.max(1,manaMax)*100)}%"></div></div>
+            <span class="hp-nums">{manaActuels}/{manaMax}</span>
         </div>
 
         {#if itemsDonjon.length > 0}
@@ -740,10 +931,10 @@
                 <div class="inv-item-info">
                     <span class="inv-item-nom">{item.nom}</span>
                     {#if item.description}<span class="item-desc">{item.description}</span>{/if}
-                    <span class="inv-usage-badge">{item.usage === 'combat' ? '⚔️ combat' : '🏕️ hors combat'}</span>
+                    <span class="inv-usage-badge">{item.usage === 'combat' ? '⚔️ combat' : item.usage === 'les_deux' ? '⚔️🏕️ partout' : '🏕️ hors combat'}</span>
                 </div>
                 <div class="inv-item-btns">
-                    {#if item.usage === 'hors_combat'}
+                    {#if item.usage === 'hors_combat' || item.usage === 'les_deux'}
                     <button class="btn-utiliser" onclick={() => utiliserHorsCombat(item)}>Utiliser</button>
                     {/if}
                     <button class="btn-vendre" onclick={() => vendreInventaire(item)}>{item.valeur_or} od</button>
@@ -761,6 +952,15 @@
                 <div class="mini-shop-desc">{pvCombatActuels}/{pvCombatMax} PV</div>
             </div>
             <button class="btn-soin" onclick={acheterSoin} disabled={orDonjon < 20 || pvCombatActuels >= pvCombatMax}>
+                20 od
+            </button>
+        </div>
+        <div class="mini-shop-item">
+            <div>
+                <div class="mini-shop-nom">💧 Élixir de mana (+20%)</div>
+                <div class="mini-shop-desc">{manaActuels}/{manaMax} mana</div>
+            </div>
+            <button class="btn-soin" onclick={acheterElixirMana} disabled={orDonjon < 20 || manaActuels >= manaMax}>
                 20 od
             </button>
         </div>
@@ -792,7 +992,8 @@
 
         <div class="gacha-choix">
             {#each gachaChoix as bonus}
-            <button class="gacha-carte {bonus.type}" onclick={() => choisirBonus(bonus)}>
+            <button class="gacha-carte" style="border-color:{RARETE_COLORS[bonus.rarete] ?? '#aaa'}" onclick={() => choisirBonus(bonus)}>
+                <div class="gacha-rarete" style="color:{RARETE_COLORS[bonus.rarete] ?? '#aaa'}">{RARETE_LABEL[bonus.rarete]}</div>
                 <div class="gacha-label">{bonus.label}</div>
                 <div class="gacha-desc">{bonus.description}</div>
             </button>
@@ -803,13 +1004,12 @@
 
     <!-- ── LOOT BOX ───────────────────────────────────────────────────────── -->
     {:else if phase === 'loot_box'}
-    {@const RARETE_LABELS: Record<string, string> = { commun:'Commun', peu_commun:'Peu commun', rare:'Rare', epique:'Épique', legendaire:'Légendaire' }}
     <div class="loot-box">
         <div class="victoire-titre">🎉 {labelEtage(etage)} terminé !</div>
 
         {#if lootDisponible}
         <div class="loot-badge" style="color:{RARETE_COLORS[lootBoxRarete] ?? '#aaa'}; border-color:{RARETE_COLORS[lootBoxRarete] ?? '#aaa'}">
-            📦 Coffre {RARETE_LABELS[lootBoxRarete] ?? lootBoxRarete}
+            📦 Coffre {RARETE_LABEL[lootBoxRarete] ?? lootBoxRarete}
         </div>
         {/if}
 
@@ -817,7 +1017,7 @@
             <div class="loot-chargement">Génération des récompenses…</div>
         {:else if lootChoix.length === 0 && !lootDisponible}
             <div class="loot-deja-obtenu">Récompense déjà récupérée pour cet étage.</div>
-            <button class="btn-entrer" onclick={continuerApresLoot}>▶ {labelEtage(etage + 1)}</button>
+            <button class="btn-entrer" onclick={() => { phase = 'donjon_shop'; sauvegarderProgression(); }}>🛒 Boutique d'étage</button>
         {:else if lootChoix.length > 1}
             <!-- Choix des 3 items -->
             <div class="loot-sous-titre">Choisissez votre récompense</div>
@@ -827,7 +1027,7 @@
                     onclick={() => choisirLoot(opt)} disabled={lootEnCours}>
                     <div class="loot-type">{opt.type === 'stuff' ? '🗡️ Équipement' : '⚡ Compétence'}</div>
                     <div class="loot-nom" style="color:{RARETE_COLORS[opt.rarete] ?? '#aaa'}">{opt.nom}</div>
-                    <div class="loot-rarete">{RARETE_LABELS[opt.rarete] ?? opt.rarete}</div>
+                    <div class="loot-rarete">{RARETE_LABEL[opt.rarete] ?? opt.rarete}</div>
                 </button>
                 {/each}
             </div>
@@ -836,11 +1036,65 @@
             <div class="loot-reveal" style="border-color:{RARETE_COLORS[lootChoix[0].rarete] ?? '#aaa'}">
                 <div class="loot-type">{lootChoix[0].type === 'stuff' ? '🗡️ Équipement' : '⚡ Compétence'}</div>
                 <div class="loot-nom" style="color:{RARETE_COLORS[lootChoix[0].rarete] ?? '#aaa'}">{lootChoix[0].nom}</div>
-                <div class="loot-rarete">{RARETE_LABELS[lootChoix[0].rarete] ?? lootChoix[0].rarete}</div>
+                <div class="loot-rarete">{RARETE_LABEL[lootChoix[0].rarete] ?? lootChoix[0].rarete}</div>
                 <div class="loot-note">Ajouté à votre inventaire !</div>
             </div>
-            <button class="btn-entrer" onclick={continuerApresLoot}>▶ {labelEtage(etage + 1)}</button>
+            <button class="btn-entrer" onclick={() => { phase = 'donjon_shop'; sauvegarderProgression(); }}>🛒 Boutique d'étage</button>
         {/if}
+    </div>
+
+    <!-- ── BOUTIQUE INTER-ÉTAGE ─────────────────────────────────────────── -->
+    {:else if phase === 'donjon_shop'}
+    <div class="inter-salle">
+        <div class="victoire-titre">🛒 Boutique d'étage</div>
+        <div class="salle-info">{labelEtage(etage)} terminé · <PixelEmoji char="💰" size={14} /> {orDonjon} od</div>
+
+        <div class="pv-inter">
+            <span class="hp-coeur">❤</span>
+            <div class="hp-track">
+                <div class="hp-fill" style="width:{Math.round(pvCombatActuels/pvCombatMax*100)}%; color:{pvColor(Math.round(pvCombatActuels/pvCombatMax*100))}"></div>
+            </div>
+            <span class="hp-nums">{pvCombatActuels}/{pvCombatMax}</span>
+        </div>
+        <div class="pv-inter">
+            <span class="hp-coeur" style="color:#3498db">💧</span>
+            <div class="hp-track"><div class="hp-fill mana-fill" style="width:{Math.round(manaActuels/Math.max(1,manaMax)*100)}%"></div></div>
+            <span class="hp-nums">{manaActuels}/{manaMax}</span>
+        </div>
+
+        <div class="section-titre">Mini-boutique</div>
+        <div class="mini-shop-item">
+            <div>
+                <div class="mini-shop-nom">Soin (+25% PV combat)</div>
+                <div class="mini-shop-desc">{pvCombatActuels}/{pvCombatMax} PV</div>
+            </div>
+            <button class="btn-soin" onclick={acheterSoin} disabled={orDonjon < 20 || pvCombatActuels >= pvCombatMax}>
+                20 od
+            </button>
+        </div>
+        <div class="mini-shop-item">
+            <div>
+                <div class="mini-shop-nom">💧 Élixir de mana (+20%)</div>
+                <div class="mini-shop-desc">{manaActuels}/{manaMax} mana</div>
+            </div>
+            <button class="btn-soin" onclick={acheterElixirMana} disabled={orDonjon < 20 || manaActuels >= manaMax}>
+                20 od
+            </button>
+        </div>
+        {#each ITEMS_CONSOMMABLES as item}
+        <div class="mini-shop-item">
+            <div>
+                <div class="mini-shop-nom">✨ {item.nom}</div>
+                <div class="mini-shop-desc">{item.description}</div>
+            </div>
+            <button class="btn-soin" onclick={() => acheterConsommable(item)} disabled={orDonjon < (item.prix_achat ?? 99)}>
+                {item.prix_achat} od
+            </button>
+        </div>
+        {/each}
+
+        <button class="btn-entrer" onclick={continuerApresLoot}>▶ {labelEtage(etage + 1)}</button>
+        <button class="btn-quitter" onclick={quitterDonjon}>🚪 Quitter et sauvegarder</button>
     </div>
 
     <!-- ── MORT ───────────────────────────────────────────────────────────── -->
@@ -857,16 +1111,42 @@
 
 </div>
 
+<!-- ── UNLOCK CLASSE ──────────────────────────────────────────────────── -->
+{#if classeUnlockModal}
+<div class="unlock-overlay">
+    <div class="unlock-modal px-frame-gold">
+        <div class="unlock-titre">🏆 Nouvelle classe débloquée !</div>
+        <div class="unlock-sous">Choisissez une classe à débloquer pour votre arbre :</div>
+        {#if classeUnlockErreur}<div style="color:#e74c3c;font-size:0.6rem;text-align:center">{classeUnlockErreur}</div>{/if}
+        {#each classeUnlockChoix as c}
+        {@const bonus = getBonusCumulatif(c.id)}
+        <button class="btn-unlock" onclick={() => choisirClasseUnlock(c)}>
+            <div class="unlock-nom">{c.nom}</div>
+            <div class="unlock-bonus">
+                {#if bonus.attq > 0}ATQ +{bonus.attq} {/if}
+                {#if bonus.def > 0}DEF +{bonus.def} {/if}
+                {#if bonus.attq_spe > 0}ATQ SPÉ +{bonus.attq_spe} {/if}
+                {#if bonus.def_spe > 0}DEF SPÉ +{bonus.def_spe} {/if}
+                {#if bonus.vit > 0}VIT +{bonus.vit} {/if}
+                {#if bonus.pv_max > 0}PV +{bonus.pv_max} {/if}
+                {#if bonus.aff_elem > 0}Tous éléments +{bonus.aff_elem}% {/if}
+            </div>
+        </button>
+        {/each}
+    </div>
+</div>
+{/if}
+
 <style>
 
     .donjon {
         color: #eee;
         font-family: var(--font);
-        width: 100%;
+        width: calc(100% + 30px);
+        margin: -15px; /* Counter main 15px padding from layout */
         box-sizing: border-box;
         overflow-x: hidden;
-        padding: 0 6px; /* On ajoute 6px de marge interne à gauche et à droite */
-    
+        padding: 15px 6px; /* Re-add top/bottom padding, keep left/right thin */
     }
 
     /* ── Lobby ── */
@@ -916,11 +1196,23 @@
     .or-chip     { font-size: 0.78rem; color: #f39c12; }
 
     /* ── Combat ── */
-    .combat-scene { display: flex; flex-direction: column; margin-bottom: 8px; }
+    .combat-scene { 
+        display: flex; 
+        flex-direction: column; 
+        margin-bottom: 8px; 
+        background-image: url('/fond_donjon/fond_donjon_combat.png');
+        background-size: cover;
+        background-position: center bottom;
+        background-repeat: no-repeat;
+        margin-left: -6px;
+        margin-right: -6px;
+        padding-left: 6px;
+        padding-right: 6px;
+    }
 
     /* Zone monstre : image pleine largeur, HUD en overlay */
     .zone-monstre { position: relative; }
-    .ennemi-img { width: 115%;height: auto; display: block; margin-top: 20px; }
+    .ennemi-img { width: 125%;height: auto; display: block; margin-top: 20px; }
     .monstre-overlay {
         position: absolute; top: 0; left: 0; right: 0;
         padding: 10px 8px;
@@ -938,8 +1230,8 @@
         z-index: 20;
 
     }
-    .joueur-img { width: 75%;height: auto; display: flex;}
-    .joueur-overlay { flex: 1; min-width: 0; }
+    .joueur-img { width: 85%;height: auto; display: flex;}
+    .joueur-overlay { flex: 1; min-width: 0; position: relative; z-index: 25; }
 
     /* HUD commun */
     .unit-plaque-nom {
@@ -970,11 +1262,50 @@
             90deg, currentColor 0, currentColor 7px, transparent 7px, transparent 9px
         );
     }
+    .mana-fill {
+        height: 100%; transition: width 0.3s;
+        background: repeating-linear-gradient(
+            90deg, #3498db 0, #3498db 7px, transparent 7px, transparent 9px
+        );
+    }
+    .atb-fill-joueur {
+        height: 100%; transition: width 0.25s;
+        background: repeating-linear-gradient(
+            90deg, #f1c40f 0, #f1c40f 7px, transparent 7px, transparent 9px
+        );
+    }
+    .atb-fill-monstre {
+        height: 100%; transition: width 0.25s;
+        background: repeating-linear-gradient(
+            90deg, #e74c3c 0, #e74c3c 7px, transparent 7px, transparent 9px
+        );
+    }
+    .atb-icon { font-size: 10px; }
+    .mana-barre {
+        height: 100%; transition: width 0.3s;
+        background: repeating-linear-gradient(
+            90deg, #3498db 0, #3498db 7px, transparent 7px, transparent 9px
+        );
+    }
+    .mana-cost {
+        font-size: 0.6rem; color: #3498db; margin-left: 4px;
+        opacity: 0.85;
+    }
     .hp-nums { font-size: 0.65rem; color: var(--text-muted); white-space: nowrap; }
 
     .statuts-row { display: flex; gap: 4px; margin-top: 3px; flex-wrap: wrap; }
-    .statut-chip { font-size: 0.65rem; padding: 1px 5px; background: rgba(231,76,60,0.2); color: #e74c3c; }
-    .buff-chip   { font-size: 0.65rem; padding: 1px 5px; background: rgba(46,204,113,0.2); color: #2ecc71; }
+    .statut-chip { font-size: 0.65rem; padding: 1px 5px; background: rgba(231,76,60,0.2); color: #e74c3c; border-radius: 3px; }
+    .statut-brulure   { background: rgba(230,126,34,0.25); color: #e67e22; }
+    .statut-froid     { background: rgba(52,152,219,0.25); color: #5dade2; }
+    .statut-poison    { background: rgba(125,60,152,0.25); color: #a569bd; }
+    .statut-regen_pv  { background: rgba(46,204,113,0.25); color: #2ecc71; }
+    .statut-marque    { background: rgba(236,240,21,0.2);  color: #f1c40f; }
+    .statut-riposte,.statut-reduction_degats { background: rgba(52,73,94,0.35); color: #95a5a6; }
+    .statut-surchauffe { background: rgba(231,76,60,0.3); color: #ff6b47; }
+    .statut-sismique   { background: rgba(149,117,55,0.3); color: #d4a843; }
+    .statut-prochain_attq_mult { background: rgba(241,196,15,0.2); color: #f39c12; }
+    .buff-chip   { font-size: 0.65rem; padding: 1px 5px; background: rgba(46,204,113,0.2); color: #2ecc71; border-radius: 3px; }
+    .debuff-chip { background: rgba(192,57,43,0.2); color: #c0392b; }
 
     .damage-float {
         position: absolute; top: -8px; left: 50%;
@@ -1217,4 +1548,34 @@
     .mort-titre { font-size: 2.5rem; }
     .mort-msg   { font-size: 0.85rem; color: #aaa; }
     .mort-or    { font-size: 0.82rem; color: #f39c12; }
+
+    /* ── Unlock classe ── */
+    .unlock-overlay {
+        position: fixed; inset: 0;
+        background: rgba(0,0,0,0.88);
+        display: flex; align-items: center; justify-content: center;
+        z-index: 200;
+    }
+    .unlock-modal {
+        background: #16213e; padding: 20px 16px;
+        max-width: 300px; width: 94%;
+        display: flex; flex-direction: column; gap: 10px;
+        animation: fadeInScale 0.3s ease;
+    }
+    .unlock-titre {
+        font-size: 0.85rem; font-weight: bold; color: #f39c12;
+        text-align: center;
+    }
+    .unlock-sous {
+        font-size: 0.60rem; color: #aaa; text-align: center;
+    }
+    .btn-unlock {
+        width: 100%; background: #0f3460; border: 1px solid #f39c12;
+        padding: 10px 12px; cursor: pointer; font-family: var(--font);
+        text-align: left; display: flex; flex-direction: column; gap: 4px;
+        transition: background 0.15s;
+    }
+    .btn-unlock:hover { background: #1a4a80; }
+    .unlock-nom   { font-size: 0.70rem; color: #eee; }
+    .unlock-bonus { font-size: 0.60rem; color: #2ecc71; }
 </style>

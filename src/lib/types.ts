@@ -31,6 +31,8 @@ export interface Caracteristique {
     def:number
     def_spe:number
     vitesse:number
+    mana_max: number
+    mana_actuels: number
 }
 
 export interface Level {
@@ -91,6 +93,8 @@ export interface stuff {
     bonus_vitesse:number
     bonus_pv_combat:number
     prix_base:number
+    bonus_aff_elem: number
+    element: Element
 }
 
 export interface inventaire {
@@ -131,17 +135,34 @@ export type Element =
     | 'neutre' | 'surnaturel' | 'technologie' | 'feu'
     | 'eau' | 'terre' | 'air' | 'vie' | 'mort' | 'tenebres' | 'lumiere'
 
+export interface StatusEffect {
+    type: 'poison' | 'stun' | 'brulure' | 'froid' | 'regen_pv'
+        | 'anti_heal' | 'marque' | 'riposte' | 'reduction_degats' | 'prochain_attq_mult';
+    valeur: number;
+    tours_restants: number;
+    incurable?: boolean;
+}
+
+export interface BuffEffect {
+    stat: 'attq' | 'attq_spe' | 'def' | 'def_spe' | 'vitesse' | 'precision' | 'esquive';
+    valeur: number;
+    tours_restants: number;
+}
+
 export interface Competence {
     id: number
     nom: string
     description: string
     type: 'attaque' | 'buff' | 'statut'
-    effet_type: 'physique' | 'magique' | 'buff_attq' | 'buff_def' | 'buff_vitesse' | 'poison' | 'stun'
+    effet_type: string
+    puissance: number
+    effet_secondaire: string | null
     valeur: number
     duree_tours: number
-    rarete: 'commun' | 'peu_commun' | 'rare' | 'epique' | 'legendaire'
+    rarete: Rarete
     prix_boutique: number
     element: Element
+    cout_mana: number
 }
 
 export interface PersonnageCompetence {

@@ -113,10 +113,13 @@
         <img src="/donjon.png" alt="" /> Donjon
     </a>
     <a href="/inventory" onclick={() => drawerOuvert = false}>
-        🎒 Sacoche
+        <img src="/inventaire.png" alt="" /> Sacoche
     </a>
     <a href="/stats" onclick={() => drawerOuvert = false}>
-        📊 Stats
+        <img src="/statistique.png" alt="" /> Stats
+    </a>
+    <a href="/tuto" onclick={() => drawerOuvert = false}>
+        Tuto
     </a>
 </nav>
 

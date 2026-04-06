@@ -1,6 +1,6 @@
 <script lang="ts">
     import { onMount } from 'svelte';
-    import { getTaches, createTache, completerTache, echouerTache, completerRoutine, supprimerRoutine, getHistoriqueActivite, ROUTINE_STATS, checkLevelUp, incrementerCompteurRoutines, getStuffs, getCompetencesDonjon, getPersonnageCompetences, ajouterRecompenseDonjon, checkModeCoffres } from '$lib/db';
+    import { getTaches, createTache, completerTache, echouerTache, completerRoutine, supprimerRoutine, getHistoriqueActivite, ROUTINE_STATS, checkLevelUp, getStuffs, getCompetencesDonjon, getPersonnageCompetences, ajouterRecompenseDonjon, checkModeCoffres, calculerStreak } from '$lib/db';
     import { refreshCharacterStore } from '$lib/stores';
     import type { tache, historique_activite, Rarete } from '$lib/types';
     import { piocherLoot } from '$lib/loot';
@@ -15,7 +15,17 @@
     let lootRarete = $state('');
     let lootEnCours = $state(false);
 
-    const LOOT_KEY = 'loot_routine_date';
+    const LOOT_WEEK_KEY = 'loot_streak_week'; // semaine ISO déjà réclamée
+    let streakActuel = $state(0);
+    let streakRecord = $state(0);
+
+    function semaineISO(date = new Date()): string {
+        const d = new Date(date);
+        d.setHours(0,0,0,0);
+        d.setDate(d.getDate() + 3 - (d.getDay() + 6) % 7);
+        const week1 = new Date(d.getFullYear(), 0, 4);
+        return d.getFullYear() + '-W' + String(1 + Math.round(((d.getTime() - week1.getTime()) / 86400000 - 3 + (week1.getDay() + 6) % 7) / 7)).padStart(2, '0');
+    }
 
     function afficherToast(msg: string) {
         toastLevelUp = msg;
@@ -44,7 +54,7 @@
         await charger();
     }
 
-    let nouvellePonctuelle = $state({ nom: '', type_activite: 'sport', difficulte: 1, date_limite: '', exp_recompense: 50, gold_recompense: 20, pv_vie_penalite: 10 });
+    let nouvellePonctuelle = $state({ nom: '', type_activite: 'sport', difficulte: 1, date_limite: '' });
     let nouvelleRoutine = $state({ nom: '', type_activite: 'sport', difficulte: 1 });
 
     const today = new Date().toISOString().split('T')[0];
@@ -54,14 +64,19 @@
         ponctuelles = toutes.filter(t => t.type === 'ponctuelle');
         routines = toutes.filter(t => t.type === 'routine');
 
-        historique = (await getHistoriqueActivite(1)).slice(0, 10);
+        const hist = await getHistoriqueActivite(1);
+        historique = hist.slice(0, 10);
 
         // Routines faites aujourd'hui
         routinesFaitesAujourdhui = new Set(
-            historique
+            hist
                 .filter(h => h.statut === 'succes' && new Date(h.date_action).toISOString().slice(0, 10) === today)
                 .map(h => h.tache_id)
         );
+
+        const streak = await calculerStreak(1);
+        streakActuel = streak.actuel;
+        streakRecord = streak.record;
     }
 
     // File d'attente pour les coffres de mode (hebdo/mensuel)
@@ -118,8 +133,9 @@
         erreur = '';
         try {
             if (typeCreation === 'ponctuelle') {
-                await createTache({ ...nouvellePonctuelle, type: 'ponctuelle' });
-                nouvellePonctuelle = { nom: '', type_activite: 'sport', difficulte: 1, date_limite: '', exp_recompense: 50, gold_recompense: 20, pv_vie_penalite: 10 };
+                const stats = ROUTINE_STATS[nouvellePonctuelle.difficulte] ?? ROUTINE_STATS[1];
+                await createTache({ ...nouvellePonctuelle, type: 'ponctuelle', exp_recompense: stats.xp, gold_recompense: stats.gold, pv_vie_penalite: stats.pv });
+                nouvellePonctuelle = { nom: '', type_activite: 'sport', difficulte: 1, date_limite: '' };
             } else {
                 const stats = ROUTINE_STATS[nouvelleRoutine.difficulte] ?? ROUTINE_STATS[1];
                 await createTache({ ...nouvelleRoutine, type: 'routine', exp_recompense: stats.xp, gold_recompense: stats.gold, pv_vie_penalite: stats.pv });
@@ -158,9 +174,10 @@
         await refreshCharacterStore();
         await charger();
 
-        // Vérifier si toutes les routines sont faites aujourd'hui
+        // Vérifier si toutes les routines sont faites aujourd'hui + streak ≥ 7 + semaine non réclamée
         const toutesTerminees = routines.every(r => routinesFaitesAujourdhui.has(r.id));
-        if (toutesTerminees && routines.length > 0 && localStorage.getItem(LOOT_KEY) !== today) {
+        const semaineActuelle = semaineISO();
+        if (toutesTerminees && routines.length > 0 && streakActuel >= 7 && localStorage.getItem(LOOT_WEEK_KEY) !== semaineActuelle) {
             await ouvrirLootRoutine();
         }
     }
@@ -174,8 +191,23 @@
         }
     }
 
+    async function rareteDepuis7Jours(): Promise<Rarete> {
+        const hist = await getHistoriqueActivite(1);
+        const il7j = new Date(Date.now() - 7 * 86400000).toISOString().split('T')[0];
+        const total = hist.filter(h =>
+            h.statut === 'succes' &&
+            new Date(h.date_action).toISOString().slice(0, 10) >= il7j
+        ).length;
+        const moyenne = total / 7;
+        if (moyenne >= 20) return 'legendaire';
+        if (moyenne >= 15) return 'epique';
+        if (moyenne >= 12) return 'rare';
+        if (moyenne >= 7)  return 'peu_commun';
+        return 'commun';
+    }
+
     async function ouvrirLootRoutine() {
-        const rarete = await incrementerCompteurRoutines(1);
+        const rarete = await rareteDepuis7Jours();
         lootRarete = rarete;
 
         const stuffs = await getStuffs();
@@ -191,7 +223,7 @@
         if (lootEnCours) return;
         lootEnCours = true;
         await ajouterRecompenseDonjon(1, option.type, option.id);
-        localStorage.setItem(LOOT_KEY, today);
+        localStorage.setItem(LOOT_WEEK_KEY, semaineISO());
         lootModalOuvert = false;
         lootEnCours = false;
         afficherToast(`🎁 ${option.nom} obtenu !`);
@@ -246,6 +278,18 @@
         <h2>Routines</h2>
         <button class="btn-add" onclick={() => ouvrirModale('routine')}>+</button>
     </div>
+    {#if streakActuel > 0}
+    <div class="streak-bar">
+        <span class="streak-feu">🔥</span>
+        <span class="streak-val">{streakActuel}j</span>
+        {#if streakRecord > streakActuel}<span class="streak-rec">· rec:{streakRecord}j</span>{/if}
+        {#if streakActuel < 7}
+        <span class="streak-hint">— lootbox à {7 - streakActuel}j</span>
+        {:else}
+        <span class="streak-hint streak-ready">— 🎁 disponible cette semaine</span>
+        {/if}
+    </div>
+    {/if}
 
     {#if routines.length === 0}
         <p class="vide">Aucune routine.</p>
@@ -321,7 +365,7 @@
             {/each}
             {#if lootChoix.length === 0}
             <p style="color:#888;font-size:0.85rem;text-align:center">Inventaire complet, rien à offrir.</p>
-            <button class="btn-cancel" onclick={() => { localStorage.setItem(LOOT_KEY, today); lootModalOuvert = false; }}>Fermer</button>
+            <button class="btn-cancel" onclick={() => { localStorage.setItem(LOOT_WEEK_KEY, semaineISO()); lootModalOuvert = false; }}>Fermer</button>
             {/if}
         </div>
     </div>
@@ -342,12 +386,12 @@
                 <option value="autre">Autre</option>
             </select></label>
             <label>Difficulté<select bind:value={nouvellePonctuelle.difficulte}>
-                <option value={1}>Facile</option><option value={2}>Moyen</option><option value={3}>Difficile</option>
+                <option value={1}>Facile — 15 XP / 8g</option>
+                <option value={2}>Moyen — 30 XP / 15g</option>
+                <option value={3}>Difficile — 50 XP / 25g</option>
             </select></label>
             <label>Date limite<input type="date" bind:value={nouvellePonctuelle.date_limite} min={today} /></label>
-            <label>Récompense XP<input type="number" bind:value={nouvellePonctuelle.exp_recompense} min={0} /></label>
-            <label>Récompense Or<input type="number" bind:value={nouvellePonctuelle.gold_recompense} min={0} /></label>
-            <label>Pénalité PV<input type="number" bind:value={nouvellePonctuelle.pv_vie_penalite} min={0} /></label>
+            <p class="info-fixe">XP et or sont fixes selon la difficulté.</p>
         {:else}
             <h3>Nouvelle routine</h3>
             <label>Nom<input bind:value={nouvelleRoutine.nom} placeholder="Ex: 30 min de sport" /></label>
@@ -376,6 +420,16 @@
 
 <style>
     .tasks { color: #eee; font-family: var(--font); }
+
+    .streak-bar {
+        display: flex; align-items: center; gap: 5px;
+        font-size: 0.82rem; margin-bottom: 8px; color: #aaa;
+    }
+    .streak-feu { font-size: 1rem; }
+    .streak-val { font-weight: bold; color: #f39c12; }
+    .streak-rec { color: #888; }
+    .streak-hint { color: #666; }
+    .streak-ready { color: #2ecc71 !important; }
 
     .section-header {
         display: flex;

@@ -20,6 +20,18 @@
     let filtreElement = $state('tous');
     let filtresOuverts = $state(false);
 
+    // ── Tooltip compétence ──────────────────────────────────────────────────
+    let tooltip = $state<Competence | null>(null);
+    let longPressTimer: ReturnType<typeof setTimeout> | null = null;
+
+    function startLongPress(c: Competence) {
+        longPressTimer = setTimeout(() => { tooltip = c; longPressTimer = null; }, 350);
+    }
+    function cancelLongPress() {
+        if (longPressTimer) { clearTimeout(longPressTimer); longPressTimer = null; }
+    }
+    function closeTooltip() { tooltip = null; }
+
     const ELEMENT_COLORS: Record<string, string> = {
         neutre: '#888', surnaturel: '#9b59b6', technologie: '#3498db',
         feu: '#e74c3c', eau: '#1abc9c', terre: '#8B6914',
@@ -73,6 +85,91 @@
         poison: 'Poison',
         stun: 'Étourdissement',
     };
+
+    const EFFET_LABELS: Record<string, string> = {
+        physique: '⚔️ Attaque physique', magique: '✨ Attaque magique',
+        aleatoire: '🎲 Attaque aléatoire',
+        vol_vie: '🩸 Attaque + vol de vie', vol_mana: '🔮 Attaque + vol de mana',
+        ignore_def: '🔓 Attaque (ignore déf)', ignore_def_spe: '🔓 Attaque (ignore déf spé)',
+        multi_frappe: '⚡ Multi-frappe', def_based: '🪨 Attaque (basée sur DEF)',
+        def_spe_based: '🪨 Attaque (basée sur DEF SPÉ)', vitesse_based: '💨 Attaque (basée sur VIT)',
+        surchauffe_add: '⚙️ Attaque + Surchauffe', surchauffe_add_mag: '⚙️ Attaque mag + Surchauffe',
+        surchauffe_purge: '❄️ Attaque + Purge surchauffe', physique_sismique: '⛏️ Attaque sismique',
+        buff_attq: '⬆️ Augmente ATQ', buff_attq_spe: '⬆️ Augmente ATQ SPÉ',
+        buff_def: '⬆️ Augmente DEF', buff_def_spe: '⬆️ Augmente DEF SPÉ',
+        buff_vitesse: '⬆️ Augmente Vitesse', buff_esquive: '⬆️ Augmente Esquive',
+        buff_precision: '⬆️ Augmente Précision',
+        soin: '💚 Soin', regen_pv: '💚 Régénération PV',
+        riposte: '🛡️ Riposte', reduction_degats: '🛡️ Réduction dégâts',
+        prochain_attq_mult: '⚡ Multiplicateur prochain coup',
+        charge_sismique: '⛏️ Charge sismique', soin_restore_mana: '💧 Restaure mana',
+        stun: '💫 Étourdissement', poison: '☠️ Poison', brulure: '🔥 Brûlure',
+        marque: '💣 Marque explosive', anti_heal: '🚫 Bloque les soins',
+        dissipe_buff: '✨ Dissipe les buffs ennemis',
+        debuff_attq: '📉 Réduit ATQ ennemi', debuff_attq_spe: '📉 Réduit ATQ SPÉ ennemi',
+        debuff_def: '📉 Réduit DEF ennemi', debuff_def_spe: '📉 Réduit DEF SPÉ ennemi',
+        debuff_vitesse: '🐢 Réduit Vitesse ennemi', debuff_precision: '👁️ Réduit Précision ennemi',
+        debuff_esquive: '👁️ Réduit Esquive ennemi',
+    };
+
+    const EFFET_SEC_LABELS: Record<string, string> = {
+        brulure: '🔥 Applique Brûlure', brulure_incurable: '🔥 Brûlure incurable',
+        froid: '❄️ Applique Froid', stun: '💫 Étourdit',
+        anti_heal: '🚫 Bloque soins', vol_mana: '🔮 Vole mana',
+        debuff_precision: '👁️ Réduit Précision', debuff_vitesse: '🐢 Réduit Vitesse',
+        debuff_def: '📉 Réduit DEF', debuff_def_spe: '📉 Réduit DEF SPÉ',
+        debuff_attq: '📉 Réduit ATQ', debuff_attq_spe: '📉 Réduit ATQ SPÉ',
+        dissipe_buff: '✨ Dissipe buffs',
+    };
+
+    function compTooltipLines(c: Competence): string[] {
+        const lines: string[] = [];
+        // Type principal
+        const effLabel = EFFET_LABELS[c.effet_type] ?? c.effet_type;
+        if (c.type === 'attaque') {
+            lines.push(`${effLabel}`);
+            if (c.effet_type === 'aleatoire') {
+                lines.push(`💥 Dégâts : ${c.valeur} à ${c.puissance} (aléatoire)`);
+            } else {
+                lines.push(`💥 Puissance : ${c.puissance}`);
+            }
+            if (c.effet_type === 'multi_frappe') lines.push(`   × ${c.valeur} frappes`);
+            if (c.effet_type === 'ignore_def' || c.effet_type === 'ignore_def_spe') lines.push(`   Ignore ${c.valeur}% de la défense`);
+            if (c.effet_type === 'vol_vie') lines.push(`   Soigne ${c.valeur}% des dégâts infligés`);
+            if (c.effet_type === 'vol_mana') lines.push(`   Vole ${c.valeur} mana`);
+            if (c.effet_type === 'surchauffe_add' || c.effet_type === 'surchauffe_add_mag') lines.push(`   +${c.valeur} charge(s) de Surchauffe`);
+            if (c.effet_type === 'surchauffe_purge') lines.push(`   Purge la Surchauffe · +${c.valeur} dégâts/charge`);
+            if (c.effet_type === 'physique_sismique') lines.push(`   Consomme les charges sismiques (+${c.valeur}%/charge)`);
+            // Effet secondaire
+            if (c.effet_secondaire) {
+                const secLabel = EFFET_SEC_LABELS[c.effet_secondaire] ?? c.effet_secondaire;
+                let detail = '';
+                if (c.valeur > 0 && c.effet_secondaire !== 'stun' && c.effet_secondaire !== 'dissipe_buff') detail += ` ${c.valeur}`;
+                if (c.duree_tours > 0 && c.duree_tours < 99) detail += ` · ${c.duree_tours}t`;
+                if (c.duree_tours === 99) detail += ' · Permanent';
+                lines.push(`${secLabel}${detail}`);
+            }
+        } else if (c.type === 'buff') {
+            lines.push(`${effLabel}`);
+            lines.push(`   +${c.valeur} pendant ${c.duree_tours} tours`);
+        } else {
+            lines.push(`${effLabel}`);
+            if (c.valeur > 0) {
+                if (c.effet_type === 'soin') lines.push(`   Soigne ${c.valeur}% des PV max`);
+                else if (c.effet_type === 'regen_pv') lines.push(`   +${c.valeur}% PV max / tour · ${c.duree_tours}t`);
+                else if (c.effet_type === 'marque') lines.push(`   Explose pour ${c.valeur} dégâts dans ${c.duree_tours}t`);
+                else if (c.effet_type === 'riposte') lines.push(`   Renvoie ${c.valeur}% des dégâts reçus · ${c.duree_tours}t`);
+                else if (c.effet_type === 'reduction_degats') lines.push(`   Réduit les dégâts subis de ${c.valeur}% · ${c.duree_tours}t`);
+                else if (c.effet_type === 'prochain_attq_mult') lines.push(`   Prochain coup ×${(c.valeur/100).toFixed(1)}`);
+                else if (c.effet_type.startsWith('debuff_')) lines.push(`   −${c.valeur} · ${c.duree_tours}t`);
+                else if (c.duree_tours > 0) lines.push(`   Valeur ${c.valeur} · ${c.duree_tours}t`);
+                else lines.push(`   ${c.valeur}`);
+            } else if (c.duree_tours > 0) {
+                lines.push(`   ${c.duree_tours} tour(s)`);
+            }
+        }
+        return lines;
+    }
 
     const slotsByOnglet: Record<string, string[]> = {
         armes: ['arme_1main', 'arme_2mains', 'bouclier_1main', 'bouclier_2mains'],
@@ -192,6 +289,7 @@ function possedeComp(comp_id: number) {
         if (s.bonus_def_spe)   b.push(`DEF SPE +${s.bonus_def_spe}`);
         if (s.bonus_vitesse)   b.push(`VIT +${s.bonus_vitesse}`);
         if (s.bonus_pv_combat) b.push(`PV +${s.bonus_pv_combat}`);
+        if (s.bonus_aff_elem)  b.push(`Aff. +${s.bonus_aff_elem}%`);
         return b.join(' · ') || '—';
     }
 
@@ -279,7 +377,11 @@ function possedeComp(comp_id: number) {
             {#each competencesFiltrées() as c}
             {@const deja = possedeComp(c.id)}
             {@const rc = RARETE_COLORS[c.rarete] ?? '#aaa'}
-            <div class="card" class:grise={deja} style="border-left: 3px solid {rc}">
+            <div role="button" tabindex="-1" class="card" class:grise={deja} style="border-left: 3px solid {rc}"
+                onpointerdown={() => startLongPress(c)}
+                onpointerup={cancelLongPress}
+                onpointerleave={cancelLongPress}
+                onpointercancel={cancelLongPress}>
                 <div class="card-info">
                     <div class="card-top">
                         <span class="nom">{c.nom}</span>
@@ -307,7 +409,11 @@ function possedeComp(comp_id: number) {
             {#each mesCompetences as pc}
             {@const c = pc.competence}
             {@const rc = RARETE_COLORS[c.rarete] ?? '#aaa'}
-            <div class="card" class:equipe={pc.est_equipee} style="border-left: 3px solid {rc}">
+            <div role="button" tabindex="-1" class="card" class:equipe={pc.est_equipee} style="border-left: 3px solid {rc}"
+                onpointerdown={() => startLongPress(c)}
+                onpointerup={cancelLongPress}
+                onpointerleave={cancelLongPress}
+                onpointercancel={cancelLongPress}>
                 <div class="card-info">
                     <div class="card-top">
                         <span class="nom">{c.nom}</span>
@@ -343,6 +449,9 @@ function possedeComp(comp_id: number) {
                         <span class="nom">{m.stuff.nom}</span>
                         <span class="slot-badge">{slotLabel[m.stuff.slot] ?? m.stuff.slot}</span>
                         <span class="rarete-badge" style="color:{rc}">{rareteLabel[m.stuff.rarete] ?? m.stuff.rarete}</span>
+                        {#if m.stuff.element && m.stuff.element !== 'neutre'}
+                        <span class="element-badge" style="color:{ELEMENT_COLORS[m.stuff.element]}; border-color:{ELEMENT_COLORS[m.stuff.element]}"><img class="pixel-icon" src={ELEMENT_ICONS[m.stuff.element]} alt={m.stuff.element} /> {m.stuff.element}</span>
+                        {/if}
                     </div>
                     {#if m.stuff.categorie === 'utilitaire'}
                         <span class="bonus">{m.stuff.slot === 'consommable' ? `+${m.stuff.soin_pv} PV IRL` : 'Skip 1 routine sans pénalité'}</span>
@@ -370,6 +479,9 @@ function possedeComp(comp_id: number) {
                         <span class="nom">{item.stuff.nom}</span>
                         <span class="slot-badge">{slotLabel[item.stuff.slot] ?? item.stuff.slot}</span>
                         <span class="rarete-badge" style="color:{rc}">{rareteLabel[item.stuff.rarete] ?? item.stuff.rarete}</span>
+                        {#if item.stuff.element && item.stuff.element !== 'neutre'}
+                        <span class="element-badge" style="color:{ELEMENT_COLORS[item.stuff.element]}; border-color:{ELEMENT_COLORS[item.stuff.element]}"><img class="pixel-icon" src={ELEMENT_ICONS[item.stuff.element]} alt={item.stuff.element} /> {item.stuff.element}</span>
+                        {/if}
                         {#if item.est_equipe}<span class="badge-equipe">Équipé</span>{/if}
                         {#if item.quantite > 1}<span class="qte">x{item.quantite}</span>{/if}
                     </div>
@@ -382,7 +494,11 @@ function possedeComp(comp_id: number) {
                     {/if}
                 </div>
                 {#if item.stuff.categorie === 'utilitaire'}
+                    {#if item.stuff.slot === 'joker' && ($characterStore.mode ?? 'normal') !== 'normal'}
+                        <span class="btn-utiliser-off">Interdit en {$characterStore.mode}</span>
+                    {:else}
                     <button class="btn-utiliser" onclick={() => utiliser(item)}>Utiliser</button>
+                    {/if}
                 {:else}
                     <button class="btn-equip" class:equipe={item.est_equipe} onclick={() => toggleEquip(item)}>
                         {item.est_equipe ? 'Retirer' : 'Équiper'}
@@ -395,6 +511,44 @@ function possedeComp(comp_id: number) {
     {/if}
 
 </div>
+
+<!-- ── TOOLTIP COMPÉTENCE ─────────────────────────────────────────── -->
+{#if tooltip}
+{@const rc = RARETE_COLORS[tooltip.rarete] ?? '#aaa'}
+{@const ec = ELEMENT_COLORS[tooltip.element] ?? '#888'}
+<div class="tooltip-overlay" onpointerdown={closeTooltip} role="dialog" aria-modal="true" tabindex="-1">
+    <div role="presentation" class="tooltip-card" style="border-top: 3px solid {rc}" onpointerdown={(e) => e.stopPropagation()}>
+        <div class="tt-header">
+            <span class="tt-nom" style="color:{rc}">{tooltip.nom}</span>
+            {#if tooltip.element !== 'neutre'}
+            <span class="tt-element" style="color:{ec}; border-color:{ec}">
+                <img class="pixel-icon" src={ELEMENT_ICONS[tooltip.element]} alt={tooltip.element} /> {tooltip.element}
+            </span>
+            {/if}
+        </div>
+        <div class="tt-meta">
+            <span style="color:{rc}">{rareteLabel[tooltip.rarete]}</span>
+            <span class="tt-sep">·</span>
+            <span>{typeCompLabel[tooltip.type]}</span>
+            {#if tooltip.cout_mana > 0}
+            <span class="tt-sep">·</span>
+            <span class="tt-mana">💧 {tooltip.cout_mana === -1 ? 'Tout le mana' : tooltip.cout_mana + ' mana'}</span>
+            {/if}
+        </div>
+
+        <p class="tt-desc">{tooltip.description}</p>
+
+        <div class="tt-effets">
+            {#each compTooltipLines(tooltip) as ligne}
+            <div class="tt-ligne">{ligne}</div>
+            {/each}
+        </div>
+
+        <div class="tt-prix">Prix : {tooltip.prix_boutique} g</div>
+        <div class="tt-hint">Relâchez pour fermer</div>
+    </div>
+</div>
+{/if}
 
 <style>
     .shop { color: #eee; font-family: var(--font); }
@@ -551,5 +705,60 @@ function possedeComp(comp_id: number) {
         border-radius: 4px; padding: 6px 10px;
         cursor: pointer; font-size: 0.82rem;
         flex-shrink: 0; margin-left: 8px;
+    }
+    .btn-utiliser-off {
+        font-size: 0.72rem; color: #e74c3c; margin-left: 8px;
+        font-style: italic; flex-shrink: 0;
+    }
+
+    /* ── Tooltip compétence ─────────────────────────────── */
+    .tooltip-overlay {
+        position: fixed; inset: 0; z-index: 999;
+        background: rgba(0,0,0,0.65);
+        display: flex; align-items: center; justify-content: center;
+        padding: 20px;
+    }
+    .tooltip-card {
+        background: #0d0d2b;
+        border: 1px solid #333;
+        border-radius: 8px;
+        padding: 16px;
+        max-width: 340px; width: 100%;
+        box-shadow: 0 8px 32px rgba(0,0,0,0.7);
+        display: flex; flex-direction: column; gap: 8px;
+    }
+    .tt-header {
+        display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
+    }
+    .tt-nom {
+        font-weight: bold; font-size: 1rem;
+    }
+    .tt-element {
+        font-size: 0.65rem; padding: 1px 7px;
+        border: 1px solid; border-radius: 10px;
+        text-transform: capitalize; display: flex; align-items: center; gap: 3px;
+    }
+    .tt-meta {
+        font-size: 0.72rem; color: #888; display: flex; gap: 6px; align-items: center;
+    }
+    .tt-sep { color: #444; }
+    .tt-mana { color: #3498db; }
+    .tt-desc {
+        font-size: 0.78rem; color: #ccc; margin: 0;
+        font-style: italic; line-height: 1.4;
+        border-bottom: 1px solid #222; padding-bottom: 8px;
+    }
+    .tt-effets {
+        display: flex; flex-direction: column; gap: 3px;
+    }
+    .tt-ligne {
+        font-size: 0.78rem; color: #ddd; line-height: 1.5;
+    }
+    .tt-prix {
+        font-size: 0.72rem; color: #888;
+        border-top: 1px solid #222; padding-top: 6px;
+    }
+    .tt-hint {
+        font-size: 0.65rem; color: #444; text-align: center;
     }
 </style>

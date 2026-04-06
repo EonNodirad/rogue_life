@@ -75,6 +75,11 @@ html, body {
     overflow-x: hidden;
 }
 
+/* Force pixel art font sur tous les boutons et inputs */
+button, input, select, textarea {
+    font-family: var(--font);
+}
+
 /* Utilitaires toast / notification style parchemin */
 .toast-parchemin {
     font-family: var(--font-scroll);
