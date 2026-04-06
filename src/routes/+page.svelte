@@ -400,7 +400,11 @@
 {/if}
 
 {#if classeModalOuvert}
+<!-- svelte-ignore a11y_click_events_have_key_events -->
+<!-- svelte-ignore a11y_no_static_element_interactions -->
 <div class="gameover-overlay" onclick={() => classeModalOuvert = false}>
+    <!-- svelte-ignore a11y_click_events_have_key_events -->
+    <!-- svelte-ignore a11y_no_static_element_interactions -->
     <div class="classe-modal" onclick={(e) => e.stopPropagation()}>
         <div class="classe-modal-titre">Choisir une classe</div>
         {#if erreurClasse}<div class="classe-err">{erreurClasse}</div>{/if}
@@ -448,7 +452,11 @@
 {/if}
 
 {#if titreModalOuvert}
+<!-- svelte-ignore a11y_click_events_have_key_events -->
+<!-- svelte-ignore a11y_no_static_element_interactions -->
 <div class="gameover-overlay" onclick={() => titreModalOuvert = false}>
+    <!-- svelte-ignore a11y_click_events_have_key_events -->
+    <!-- svelte-ignore a11y_no_static_element_interactions -->
     <div class="classe-modal" onclick={(e) => e.stopPropagation()}>
         <div class="classe-modal-titre">Choisir un titre</div>
         {#each titres.filter(t => titresDebloques.includes(t.id)) as t}

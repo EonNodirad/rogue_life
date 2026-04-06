@@ -254,7 +254,6 @@
   .succes { background: rgba(46,204,113,0.2); color: #2ecc71; padding: 6px 12px; border-radius: 6px; margin-bottom: 8px; font-size: 0.85rem; }
   .vide { color: #555; font-size: 0.85rem; }
 
-  .filtres { display: flex; flex-direction: column; gap: 6px; margin-bottom: 12px; }
   .filtre-groupe { display: flex; flex-wrap: wrap; gap: 4px; align-items: center; margin-bottom: 4px; }
   .filtre-label { font-size: 0.68rem; color: #555; margin-right: 2px; }
   .pill {

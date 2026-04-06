@@ -19,4 +19,4 @@
     width={BASE}
     height={BASE}
     style="width:{size}px; height:{size}px; image-rendering:pixelated; vertical-align:middle; display:inline-block;"
-/>
+></canvas>

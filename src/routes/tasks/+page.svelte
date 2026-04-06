@@ -374,6 +374,8 @@
 
 <!-- MODALE -->
 {#if modale}
+<!-- svelte-ignore a11y_click_events_have_key_events -->
+<!-- svelte-ignore a11y_no_static_element_interactions -->
 <div class="overlay" onclick={(e) => { if (e.target === e.currentTarget) modale = false; }}>
     <div class="modale">
         {#if typeCreation === 'ponctuelle'}
