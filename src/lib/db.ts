@@ -1,3 +1,4 @@
+import { base } from '$app/paths';
 import initSqlJs from 'sql.js';
 import type { Database } from 'sql.js';
 import initSql from '$lib/init.sql?raw';
@@ -53,7 +54,7 @@ async function getDb(): Promise<Database> {
 
     if (navigator.storage?.persist) await navigator.storage.persist();
 
-    const SQL   = await initSqlJs({ locateFile: () => '/sql-wasm.wasm' });
+    const SQL   = await initSqlJs({ locateFile: () => `${base}/sql-wasm.wasm` });
     const saved = await idbGet();
 
     if (saved) {
