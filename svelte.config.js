@@ -5,6 +5,9 @@
 import adapter from "@sveltejs/adapter-static";
 import { vitePreprocess } from "@sveltejs/vite-plugin-svelte";
 
+// Nom du repo GitHub (laisser vide si déployé sur username.github.io sans sous-dossier)
+const REPO = '/rogue_life';
+
 /** @type {import('@sveltejs/kit').Config} */
 const config = {
   preprocess: vitePreprocess(),
@@ -12,6 +15,9 @@ const config = {
     adapter: adapter({
       fallback: "index.html",
     }),
+    paths: {
+      base: process.env.NODE_ENV === 'production' ? REPO : '',
+    },
   },
 };
 
