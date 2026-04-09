@@ -167,11 +167,17 @@
         await charger();
     }
 
+    let erreurChargement = $state('');
+
     onMount(() => {
         setTimeout(async () => {
-            await charger();
-            // Déclencher game over si PV IRL = 0 au chargement
-            if (carac && carac.pv_vie_actuels <= 0) gameOverModal = true;
+            try {
+                await charger();
+                if (carac && carac.pv_vie_actuels <= 0) gameOverModal = true;
+            } catch (e: any) {
+                erreurChargement = e?.message ?? String(e);
+                console.error('charger() failed:', e);
+            }
         }, 100);
         window.addEventListener('focus', charger);
         return () => window.removeEventListener('focus', charger);
@@ -377,6 +383,7 @@
 </div>
 {:else}
 <p>Chargement...</p>
+{#if erreurChargement}<p style="color:#e74c3c;font-size:0.8rem;padding:8px">Erreur : {erreurChargement}</p>{/if}
 {/if}
 
 {#if modeConfirm}

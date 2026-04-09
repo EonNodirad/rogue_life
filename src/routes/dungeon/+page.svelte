@@ -124,6 +124,7 @@
 
     let lootBoxRarete = $state('peu_commun');
     let lootChoix = $state<LootOption[]>([]);
+    let lootClaimed = $state(false);
 
     let combatState = $state<CombatState | null>(null);
     let textBox = $state('');
@@ -219,7 +220,9 @@
     const SAVE_KEY = 'donjon_save_1';
 
     function sauvegarderProgression() {
-        const save = { etage, salle, orDonjon, bonusDonjonActifs, itemsDonjon, inventaireDonjon, pvCombatActuels, pvCombatMax, manaActuels, manaMax, phase, lootBoxRarete };
+        const save = { etage, salle, orDonjon, bonusDonjonActifs, itemsDonjon, inventaireDonjon,
+            pvCombatActuels, pvCombatMax, manaActuels, manaMax, phase, lootBoxRarete, lootClaimed,
+            cs: (phase === 'combat' && combatState) ? JSON.stringify(combatState) : null };
         localStorage.setItem(SAVE_KEY, JSON.stringify(save));
     }
 
@@ -239,6 +242,8 @@
             if (s.manaMax) manaMax = s.manaMax;
             if (s.manaActuels != null) manaActuels = s.manaActuels;
             if (s.lootBoxRarete) lootBoxRarete = s.lootBoxRarete;
+            lootClaimed = s.lootClaimed ?? false;
+            if (s.cs) { try { combatState = JSON.parse(s.cs); } catch {} }
             return { savedPhase: s.phase ?? 'lobby' };
         } catch { return { savedPhase: 'lobby' }; }
     }
@@ -287,11 +292,16 @@
         await chargerPerso();
         if (hasSave) {
             const { savedPhase } = chargerSauvegarde();
-            // Si on était en loot_box, régénérer les choix sans ré-incrémenter le compteur
             if (savedPhase === 'loot_box') {
-                lootDisponible = true; // restore to allow regeneration
-                await preparerLootBox(false);
-                phase = 'loot_box';
+                if (lootClaimed) {
+                    phase = 'loot_box';
+                } else {
+                    lootDisponible = true;
+                    await preparerLootBox(false);
+                    phase = 'loot_box';
+                }
+            } else if (savedPhase === 'combat' && combatState) {
+                phase = 'combat';
             }
         }
     });
@@ -309,9 +319,13 @@
         await chargerPerso();
         const { savedPhase } = chargerSauvegarde();
         if (savedPhase === 'loot_box') {
-            lootDisponible = true; // restore to allow regeneration
-            await preparerLootBox(false);
-            phase = 'loot_box';
+            if (lootClaimed) {
+                phase = 'loot_box';
+            } else {
+                lootDisponible = true;
+                await preparerLootBox(false);
+                phase = 'loot_box';
+            }
         } else if (savedPhase === 'gacha') {
             genererGachaChoix();
             phase = 'gacha';
@@ -321,8 +335,12 @@
             // Entre deux étages (salle=0) : lancer la salle 1 du nouvel étage
             lancerSalle();
         } else {
-            // combat → relancer à la salle sauvegardée SANS incrémenter
-            lancerCombat();
+            // combat → utiliser l'état sauvegardé si disponible, sinon relancer
+            if (combatState) {
+                phase = 'combat';
+            } else {
+                lancerCombat();
+            }
         }
     }
 
@@ -529,6 +547,8 @@
         await ajouterRecompenseDonjon(1, option.type, option.id);
         await refreshCharacterStore();
         lootChoix = [option]; // n'afficher que le choix retenu
+        lootClaimed = true;
+        sauvegarderProgression();
         lootEnCours = false;
     }
 
@@ -536,6 +556,7 @@
         etage += 1;
         salle = 0;
         lootChoix = [];
+        lootClaimed = false;
         etageEnCours = true;
         effacerSauvegarde();
         aSauvegarde = false;

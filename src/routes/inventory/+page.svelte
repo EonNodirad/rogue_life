@@ -8,6 +8,7 @@
     import { refreshCharacterStore } from '$lib/stores';
     import type { stuff, inventaire, PersonnageCompetence, Competence } from '$lib/types';
     import { ELEMENT_ICONS } from '$lib/icons';
+    import { RARETE_COLORS as COULEURS_RARETE, ELEMENT_COLORS, rareteLabel, typeCompLabel, compTooltipLines, compEffetStr, itemBonusLines } from '$lib/tooltip';
 
     type InvItem = inventaire & { stuff: stuff };
     type PcItem  = PersonnageCompetence & { competence: Competence };
@@ -60,8 +61,6 @@
             const prix = await vendreItem(1, item.id);
             await refreshCharacterStore();
             await charger();
-            erreur = ''; // clear any previous error
-            // brief success hint via erreur field repurposed — show as succes
             succes = `+${prix}g 💰`;
             if (succesTimer) clearTimeout(succesTimer);
             succesTimer = setTimeout(() => succes = '', 2000);
@@ -96,9 +95,16 @@
         return true;
     }));
 
-    const COULEURS_RARETE: Record<string, string> = {
-        commun: '#aaa', peu_commun: '#2ecc71', rare: '#3498db', epique: '#9b59b6', legendaire: '#f39c12'
-    };
+    // ── Tooltip long press ────────────────────────────────────────────────────
+    let tooltipItem = $state<InvItem | null>(null);
+    let tooltipComp = $state<PcItem | null>(null);
+    let lpItem: ReturnType<typeof setTimeout> | null = null;
+    let lpComp: ReturnType<typeof setTimeout> | null = null;
+
+    function startLPItem(item: InvItem) { lpItem = setTimeout(() => { tooltipItem = item; lpItem = null; }, 350); }
+    function cancelLPItem() { if (lpItem) { clearTimeout(lpItem); lpItem = null; } }
+    function startLPComp(pc: PcItem)   { lpComp = setTimeout(() => { tooltipComp = pc;   lpComp = null; }, 350); }
+    function cancelLPComp() { if (lpComp) { clearTimeout(lpComp); lpComp = null; } }
 </script>
 
 <div class="sacoche">
@@ -114,12 +120,18 @@
         <p class="vide">Aucun équipement.</p>
         {:else}
         {#each equipes as item}
-        <div class="item-row">
+        {@const rc = COULEURS_RARETE[item.stuff.rarete]}
+        <div class="item-row" role="button" tabindex="-1"
+             onpointerdown={() => startLPItem(item)}
+             onpointerup={cancelLPItem}
+             onpointerleave={cancelLPItem}
+             onpointercancel={cancelLPItem}
+             style="border-left: 3px solid {rc}">
             <div class="item-info">
-                <span class="item-nom" style="color:{COULEURS_RARETE[item.stuff.rarete]}">{item.stuff.nom}</span>
+                <span class="item-nom" style="color:{rc}">{item.stuff.nom}</span>
                 <span class="item-slot">{item.stuff.slot}</span>
             </div>
-            <button class="btn-action desequiper" onclick={() => agirItem(item)}>Retirer</button>
+            <button class="btn-action desequiper" onpointerdown={(e) => e.stopPropagation()} onclick={() => agirItem(item)}>Retirer</button>
         </div>
         {/each}
         {/if}
@@ -156,9 +168,15 @@
         {:else}
         {#each inventaireFiltré as item}
         {@const prixVente = Math.floor((item.stuff.prix_base ?? 0) / 4)}
-        <div class="item-row">
+        {@const rc = COULEURS_RARETE[item.stuff.rarete]}
+        <div class="item-row" role="button" tabindex="-1"
+             onpointerdown={() => startLPItem(item)}
+             onpointerup={cancelLPItem}
+             onpointerleave={cancelLPItem}
+             onpointercancel={cancelLPItem}
+             style="border-left: 3px solid {rc}">
             <div class="item-info">
-                <span class="item-nom" style="color:{COULEURS_RARETE[item.stuff.rarete]}">{item.stuff.nom}</span>
+                <span class="item-nom" style="color:{rc}">{item.stuff.nom}</span>
                 <span class="item-meta">×{item.quantite} · {item.stuff.categorie} · {item.stuff.slot}</span>
                 <span class="item-bonus">
                     {#if item.stuff.bonus_attq}ATQ+{item.stuff.bonus_attq} {/if}
@@ -169,17 +187,15 @@
                 </span>
             </div>
             <div class="item-actions">
-                <button
-                    class="btn-action"
-                    class:desequiper={item.est_equipe}
-                    onclick={() => agirItem(item)}
-                >
+                <button class="btn-action" class:desequiper={item.est_equipe}
+                    onpointerdown={(e) => e.stopPropagation()}
+                    onclick={() => agirItem(item)}>
                     {#if item.stuff.slot === 'consommable'}Utiliser
                     {:else if item.est_equipe}Retirer
                     {:else}Équiper{/if}
                 </button>
                 {#if !item.est_equipe}
-                <button class="btn-vendre" onclick={() => vendre(item)} title="Vendre {prixVente}g">
+                <button class="btn-vendre" onpointerdown={(e) => e.stopPropagation()} onclick={() => vendre(item)} title="Vendre {prixVente}g">
                     {prixVente}g
                 </button>
                 {/if}
@@ -223,17 +239,25 @@
         <p class="vide">Aucune compétence pour ces filtres.</p>
         {:else}
         {#each competencesFiltrees as pc}
-        <div class="item-row">
+        {@const c = pc.competence}
+        {@const rc = COULEURS_RARETE[c.rarete]}
+        <div class="item-row" role="button" tabindex="-1"
+             onpointerdown={() => startLPComp(pc)}
+             onpointerup={cancelLPComp}
+             onpointerleave={cancelLPComp}
+             onpointercancel={cancelLPComp}
+             style="border-left: 3px solid {rc}">
             <div class="item-info">
-                <span class="item-nom" style="color:{COULEURS_RARETE[pc.competence.rarete]}">{pc.competence.nom}</span>
-                <span class="item-meta"><img class="pixel-icon" src={ELEMENT_ICONS[pc.competence.element] ?? ''} alt={pc.competence.element} /> {pc.competence.element} · {pc.competence.rarete.replace('_',' ')}</span>
-                <span class="item-bonus">{pc.competence.description}</span>
+                <span class="item-nom" style="color:{rc}">{c.nom}</span>
+                <span class="item-meta">
+                    <img class="pixel-icon" src={ELEMENT_ICONS[c.element] ?? ''} alt={c.element} />
+                    {c.element} · {c.rarete.replace('_',' ')}
+                </span>
+                <span class="item-bonus">{compEffetStr(c)}</span>
             </div>
-            <button
-                class="btn-action"
-                class:desequiper={pc.est_equipee}
-                onclick={() => agirComp(pc)}
-            >
+            <button class="btn-action" class:desequiper={pc.est_equipee}
+                onpointerdown={(e) => e.stopPropagation()}
+                onclick={() => agirComp(pc)}>
                 {pc.est_equipee ? 'Retirer' : 'Équiper'}
             </button>
         </div>
@@ -241,6 +265,77 @@
         {/if}
     </section>
 </div>
+
+<!-- ── TOOLTIP ITEM ──────────────────────────────────────────────── -->
+{#if tooltipItem}
+{@const s = tooltipItem.stuff}
+{@const rc = COULEURS_RARETE[s.rarete]}
+{@const ec = ELEMENT_COLORS[s.element] ?? '#888'}
+<div class="tooltip-overlay" onpointerdown={() => tooltipItem = null} role="dialog" aria-modal="true" tabindex="-1">
+    <div role="presentation" class="tooltip-card" style="border-top: 3px solid {rc}" onpointerdown={(e) => e.stopPropagation()}>
+        <div class="tt-header">
+            <span class="tt-nom" style="color:{rc}">{s.nom}</span>
+            {#if s.element && s.element !== 'neutre'}
+            <span class="tt-element" style="color:{ec}; border-color:{ec}">
+                <img class="pixel-icon" src={ELEMENT_ICONS[s.element]} alt={s.element} /> {s.element}
+            </span>
+            {/if}
+        </div>
+        <div class="tt-meta">
+            <span style="color:{rc}">{rareteLabel[s.rarete]}</span>
+            <span class="tt-sep">·</span>
+            <span>{s.categorie}</span>
+            <span class="tt-sep">·</span>
+            <span>{s.slot}</span>
+        </div>
+        {#if itemBonusLines(s).length > 0}
+        <div class="tt-effets">
+            {#each itemBonusLines(s) as ligne}
+            <div class="tt-ligne">{ligne}</div>
+            {/each}
+        </div>
+        {:else}
+        <p class="tt-desc">Aucun bonus.</p>
+        {/if}
+        <div class="tt-hint">Relâchez pour fermer</div>
+    </div>
+</div>
+{/if}
+
+<!-- ── TOOLTIP COMPÉTENCE ────────────────────────────────────────── -->
+{#if tooltipComp}
+{@const c = tooltipComp.competence}
+{@const rc = COULEURS_RARETE[c.rarete]}
+{@const ec = ELEMENT_COLORS[c.element] ?? '#888'}
+<div class="tooltip-overlay" onpointerdown={() => tooltipComp = null} role="dialog" aria-modal="true" tabindex="-1">
+    <div role="presentation" class="tooltip-card" style="border-top: 3px solid {rc}" onpointerdown={(e) => e.stopPropagation()}>
+        <div class="tt-header">
+            <span class="tt-nom" style="color:{rc}">{c.nom}</span>
+            {#if c.element !== 'neutre'}
+            <span class="tt-element" style="color:{ec}; border-color:{ec}">
+                <img class="pixel-icon" src={ELEMENT_ICONS[c.element]} alt={c.element} /> {c.element}
+            </span>
+            {/if}
+        </div>
+        <div class="tt-meta">
+            <span style="color:{rc}">{rareteLabel[c.rarete]}</span>
+            <span class="tt-sep">·</span>
+            <span>{typeCompLabel[c.type]}</span>
+            {#if c.cout_mana > 0}
+            <span class="tt-sep">·</span>
+            <span class="tt-mana">💧 {c.cout_mana === -1 ? 'Tout le mana' : c.cout_mana + ' mana'}</span>
+            {/if}
+        </div>
+        <p class="tt-desc">{c.description}</p>
+        <div class="tt-effets">
+            {#each compTooltipLines(c) as ligne}
+            <div class="tt-ligne">{ligne}</div>
+            {/each}
+        </div>
+        <div class="tt-hint">Relâchez pour fermer</div>
+    </div>
+</div>
+{/if}
 
 <style>
   .sacoche {
@@ -271,18 +366,20 @@
   }
   .filtres-drawer { max-height: 0; overflow: hidden; transition: max-height 0.3s ease; }
   .filtres-drawer.ouvert { max-height: 200px; }
-  /* separator under section-header when drawer closed */
   section h3 { border-bottom: 1px solid #333; padding-bottom: 6px; }
 
   .item-row {
     display: flex; align-items: center; justify-content: space-between;
-    padding: 8px 0; border-bottom: 1px solid #1e1e3a; gap: 8px;
+    padding: 8px 0 8px 8px; border-bottom: 1px solid #1e1e3a; gap: 8px;
+    border-left: 3px solid transparent;
+    user-select: none; -webkit-user-select: none;
   }
   .item-info { display: flex; flex-direction: column; gap: 2px; flex: 1; min-width: 0; }
   .item-nom  { font-size: 0.88rem; font-weight: bold; }
   .item-slot { font-size: 0.72rem; color: #888; }
   .item-meta { font-size: 0.72rem; color: #888; }
   .item-bonus { font-size: 0.72rem; color: #2ecc71; }
+  .pixel-icon { width: 14px; height: 14px; image-rendering: pixelated; vertical-align: middle; }
 
   .item-actions { display: flex; flex-direction: column; gap: 4px; align-items: flex-end; flex-shrink: 0; }
   .btn-vendre {
@@ -299,4 +396,39 @@
   .btn-action:hover { background: rgba(46,204,113,0.15); }
   .btn-action.desequiper { border-color: #e74c3c; color: #e74c3c; }
   .btn-action.desequiper:hover { background: rgba(231,76,60,0.15); }
+
+  /* ── Tooltip ─────────────────────────────────────────────── */
+  .tooltip-overlay {
+    position: fixed; inset: 0; z-index: 999;
+    background: rgba(0,0,0,0.65);
+    display: flex; align-items: center; justify-content: center;
+    padding: 20px;
+  }
+  .tooltip-card {
+    background: #0d0d2b;
+    border: 1px solid #333;
+    border-radius: 8px;
+    padding: 16px;
+    max-width: 340px; width: 100%;
+    box-shadow: 0 8px 32px rgba(0,0,0,0.7);
+    display: flex; flex-direction: column; gap: 8px;
+  }
+  .tt-header { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+  .tt-nom { font-weight: bold; font-size: 1rem; }
+  .tt-element {
+    font-size: 0.65rem; padding: 1px 7px;
+    border: 1px solid; border-radius: 10px;
+    text-transform: capitalize; display: flex; align-items: center; gap: 3px;
+  }
+  .tt-meta { font-size: 0.72rem; color: #888; display: flex; gap: 6px; align-items: center; }
+  .tt-sep { color: #444; }
+  .tt-mana { color: #3498db; }
+  .tt-desc {
+    font-size: 0.78rem; color: #ccc; margin: 0;
+    font-style: italic; line-height: 1.4;
+    border-bottom: 1px solid #222; padding-bottom: 8px;
+  }
+  .tt-effets { display: flex; flex-direction: column; gap: 3px; }
+  .tt-ligne { font-size: 0.78rem; color: #ddd; line-height: 1.5; }
+  .tt-hint { font-size: 0.65rem; color: #444; text-align: center; }
 </style>

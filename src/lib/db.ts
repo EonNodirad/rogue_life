@@ -649,7 +649,16 @@ export async function echouerTache(personnage_id: number, tache_id: number): Pro
 
 export async function calculerStreak(personnage_id: number): Promise<{ actuel: number; record: number }> {
     await getDb();
-    const rows = dbSelect<{ jour: string }>(
+
+    // Toutes les routines (globales, pas de personnage_id sur tache)
+    const routines = dbSelect<{ id: number; date_creation: string }>(
+        `SELECT id, date_creation FROM tache WHERE type = 'routine'`,
+        []
+    );
+    if (routines.length === 0) return { actuel: 0, record: 0 };
+
+    // Jours candidats : au moins 1 succès et aucune pénalité
+    const joursCandidats = dbSelect<{ jour: string }>(
         `SELECT DISTINCT date(h.date_action) as jour
          FROM historique_activite h
          WHERE h.personnage_id = $1 AND h.statut = 'succes'
@@ -661,28 +670,45 @@ export async function calculerStreak(personnage_id: number): Promise<{ actuel: n
          ORDER BY jour DESC`,
         [personnage_id]
     );
-    if (rows.length === 0) return { actuel: 0, record: 0 };
 
-    const jours     = rows.map(r => r.jour);
+    // Filtrer : uniquement les jours où TOUTES les routines existantes ont un succès
+    const joursComplets: string[] = [];
+    for (const { jour } of joursCandidats) {
+        const routinesDuJour = routines.filter(r => !r.date_creation || r.date_creation.slice(0, 10) <= jour);
+        if (routinesDuJour.length === 0) continue;
+        const accomplies = dbSelect<{ tache_id: number }>(
+            `SELECT tache_id FROM historique_activite
+             WHERE personnage_id = $1 AND statut = 'succes' AND date(date_action) = $2
+             AND tache_id IN (SELECT id FROM tache WHERE type = 'routine')`,
+            [personnage_id, jour]
+        );
+        const accompliesIds = new Set(accomplies.map(a => a.tache_id));
+        if (routinesDuJour.every(r => accompliesIds.has(r.id))) joursComplets.push(jour);
+    }
+
+    if (joursComplets.length === 0) return { actuel: 0, record: 0 };
+
     const today     = new Date().toISOString().split('T')[0];
     const yesterday = new Date(Date.now() - 86400000).toISOString().split('T')[0];
+    const sorted    = [...joursComplets].sort((a, b) => b.localeCompare(a));
 
     let actuel = 0;
-    let ref = jours[0] === today || jours[0] === yesterday ? jours[0] : null;
-    if (ref) {
+    if (sorted[0] === today || sorted[0] === yesterday) {
+        let prev = sorted[0];
         actuel = 1;
-        for (let i = 1; i < jours.length; i++) {
-            const expected = new Date(new Date(ref).getTime() - 86400000).toISOString().split('T')[0];
-            if (jours[i] === expected) { actuel++; ref = jours[i]; }
+        for (let i = 1; i < sorted.length; i++) {
+            const expected = new Date(new Date(prev).getTime() - 86400000).toISOString().split('T')[0];
+            if (sorted[i] === expected) { actuel++; prev = sorted[i]; }
             else break;
         }
     }
 
     let record = 0, courant = 1;
-    for (let i = 1; i < jours.length; i++) {
-        const expected = new Date(new Date(jours[i - 1]).getTime() - 86400000).toISOString().split('T')[0];
-        if (jours[i] === expected) { courant++; }
-        else { record = Math.max(record, courant); courant = 1; }
+    const asc = [...joursComplets].sort();
+    for (let i = 1; i < asc.length; i++) {
+        const expected = new Date(new Date(asc[i - 1]).getTime() + 86400000).toISOString().split('T')[0];
+        if (asc[i] === expected) { courant++; record = Math.max(record, courant); }
+        else courant = 1;
     }
     record = Math.max(record, courant, actuel);
 
