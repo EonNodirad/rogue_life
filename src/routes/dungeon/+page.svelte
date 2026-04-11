@@ -222,6 +222,7 @@
     function sauvegarderProgression() {
         const save = { etage, salle, orDonjon, bonusDonjonActifs, itemsDonjon, inventaireDonjon,
             pvCombatActuels, pvCombatMax, manaActuels, manaMax, phase, lootBoxRarete, lootClaimed,
+            lootDisponible, gachaChoix, lootChoix,
             cs: (phase === 'combat' && combatState) ? JSON.stringify(combatState) : null };
         localStorage.setItem(SAVE_KEY, JSON.stringify(save));
     }
@@ -242,7 +243,10 @@
             if (s.manaMax) manaMax = s.manaMax;
             if (s.manaActuels != null) manaActuels = s.manaActuels;
             if (s.lootBoxRarete) lootBoxRarete = s.lootBoxRarete;
-            lootClaimed = s.lootClaimed ?? false;
+            lootClaimed    = s.lootClaimed    ?? false;
+            lootDisponible = s.lootDisponible ?? false;
+            if (s.gachaChoix?.length) gachaChoix = s.gachaChoix;
+            if (s.lootChoix?.length)  lootChoix  = s.lootChoix;
             if (s.cs) { try { combatState = JSON.parse(s.cs); } catch {} }
             return { savedPhase: s.phase ?? 'lobby' };
         } catch { return { savedPhase: 'lobby' }; }
@@ -293,13 +297,10 @@
         if (hasSave) {
             const { savedPhase } = chargerSauvegarde();
             if (savedPhase === 'loot_box') {
-                if (lootClaimed) {
-                    phase = 'loot_box';
-                } else {
-                    lootDisponible = true;
+                if (!lootClaimed && !lootChoix.length && lootDisponible) {
                     await preparerLootBox(false);
-                    phase = 'loot_box';
                 }
+                phase = 'loot_box';
             } else if (savedPhase === 'combat' && combatState) {
                 phase = 'combat';
             }
@@ -322,19 +323,18 @@
         await chargerPerso();
         const { savedPhase } = chargerSauvegarde();
         if (savedPhase === 'loot_box') {
-            if (lootClaimed) {
-                phase = 'loot_box';
-            } else {
-                lootDisponible = true;
+            if (!lootClaimed && !lootChoix.length && lootDisponible) {
                 await preparerLootBox(false);
-                phase = 'loot_box';
             }
+            phase = 'loot_box';
         } else if (savedPhase === 'gacha') {
             gachaEstFinEtage = (salle === 10);
-            genererGachaChoix();
+            // Utiliser les choix sauvegardés si disponibles, sinon générer de nouveaux
+            if (!gachaChoix.length) genererGachaChoix();
             phase = 'gacha';
         } else if (savedPhase === 'ravito') {
-            genererGachaChoix(); // gachaChoix n'est pas persisté, doit être régénéré
+            // Utiliser les choix sauvegardés si disponibles, sinon générer de nouveaux
+            if (!gachaChoix.length) genererGachaChoix();
             phase = 'ravito';
         } else if (savedPhase === 'inter_salle' || savedPhase === 'donjon_shop') {
             phase = savedPhase;
