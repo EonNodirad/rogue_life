@@ -13,9 +13,9 @@
     import { refreshCharacterStore } from '$lib/stores';
     import {
         genererMonstre, initCombat, executerTour, lootMonstre, ITEMS_CONSOMMABLES, MONSTRE_IMAGES,
-        type CombatState, type ActionCombat, type CombatUnit, type DonjonItem,
+        type CombatState, type ActionCombat, type CombatUnit,
     } from '$lib/combat';
-    import type { Competence, PersonnageCompetence, stuff, Element, Rarete } from '$lib/types';
+    import type { Competence, PersonnageCompetence, stuff, Element, Rarete, DonjonItem } from '$lib/types';
     import { ELEMENT_ICONS } from '$lib/icons';
     import PixelEmoji from '$lib/PixelEmoji.svelte';
     import { CLASSES, getBonusCumulatif, debloquerClasse, type ClasseDef } from '$lib/classes';
@@ -327,6 +327,7 @@
                 phase = 'loot_box';
             }
         } else if (savedPhase === 'gacha') {
+            gachaEstFinEtage = (salle === 10);
             genererGachaChoix();
             phase = 'gacha';
         } else if (savedPhase === 'ravito' || savedPhase === 'inter_salle' || savedPhase === 'donjon_shop') {

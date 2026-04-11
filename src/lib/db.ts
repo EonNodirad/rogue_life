@@ -2,6 +2,7 @@ import { base } from '$app/paths';
 import initSqlJs from 'sql.js';
 import type { Database } from 'sql.js';
 import initSql from '$lib/init.sql?raw';
+import migration001Sql from '$lib/migration_001.sql?raw';
 import type {
     Personnage, Caracteristique, Level, Titre, Classe,
     Monstre, Donjon, Donjon_Monstre, historique_poids,
@@ -59,9 +60,16 @@ async function getDb(): Promise<Database> {
 
     if (saved) {
         sqlDb = new SQL.Database(saved);
+        // Appliquer les migrations manquantes
+        const version = (sqlDb.exec('PRAGMA user_version')[0]?.values[0]?.[0] as number) ?? 0;
+        if (version < 1) {
+            sqlDb.run(migration001Sql);
+            await saveDb();
+        }
     } else {
         sqlDb = new SQL.Database();
         sqlDb.run(initSql);
+        sqlDb.run('PRAGMA user_version = 1');
         await saveDb();
     }
     return sqlDb;

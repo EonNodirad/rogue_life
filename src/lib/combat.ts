@@ -1,6 +1,7 @@
-import { base } from '$app/paths';
-import type { Competence, Element } from './types';
+import type { Competence, Element, DonjonItem } from './types';
 import type { StatusEffect, BuffEffect } from './types';
+import { NOMS_MONSTRES, MONSTRE_ELEMENTS, MONSTRE_SKILLS, type MonstreSkill } from './monstres';
+export { MONSTRE_IMAGES, ITEMS_CONSOMMABLES, lootMonstre } from './monstres';
 
 // ── Matrice des types (attaque → défense) ─────────────────────────────────────
 export const TYPE_MATRIX: Record<Element, Partial<Record<Element, number>>> = {
@@ -46,20 +47,6 @@ export interface CombatUnit {
     buffs: BuffEffect[];
 }
 
-export interface DonjonItem {
-    nom: string;
-    valeur_or: number;
-    type: 'inutile' | 'consommable' | 'rare';
-    description?: string;
-    usage?: 'combat' | 'hors_combat' | 'les_deux';
-    prix_achat?: number;
-    effet?: {
-        type: 'boost_attq' | 'poison' | 'stun' | 'soin_pct' | 'mana_pct';
-        valeur?: number;
-        duree?: number;
-    };
-}
-
 export interface CombatState {
     joueur: CombatUnit;
     monstre: CombatUnit;
@@ -83,116 +70,35 @@ export interface ActionCombat {
 
 // ── Génération de monstre ─────────────────────────────────────────────────────
 
-const NOMS_MONSTRES = [
-    'Slime', 'Gobelin', 'Squelette', 'Loup', 'Araignée',
-    'Troll', 'Bandit', 'Fantôme', 'Drake', 'Golem',
-];
-
-export const MONSTRE_IMAGES: Record<string, string> = {
-    'Slime':     `${base}/monstres/slime.png`,
-    'Gobelin':   `${base}/monstres/gobelin.png`,
-    'Squelette': `${base}/monstres/squelette.png`,
-    'Loup':      `${base}/monstres/loup.png`,
-    'Araignée':  `${base}/monstres/araignee.png`,
-    'Troll':     `${base}/monstres/troll.png`,
-    'Bandit':    `${base}/monstres/bandit.png`,
-    'Fantôme':   `${base}/monstres/fantome.png`,
-    'Drake':     `${base}/monstres/dragon_feu.png`,
-    'Golem':     `${base}/monstres/golem_lumier.png`,
-};
-
-const ITEMS_INUTILES: Record<string, DonjonItem[]> = {
-    'Slime':     [
-        { nom: 'Bave de slime',      valeur_or: 4, type: 'inutile' },
-        { nom: 'Résidu gélatineux',  valeur_or: 3, type: 'inutile' },
-        { nom: 'Noyau visqueux',     valeur_or: 6, type: 'inutile' },
-    ],
-    'Gobelin':   [
-        { nom: 'Oreille de gobelin', valeur_or: 4, type: 'inutile' },
-        { nom: 'Dent de gobelin',    valeur_or: 3, type: 'inutile' },
-        { nom: 'Couteau rouillé',    valeur_or: 7, type: 'inutile' },
-    ],
-    'Squelette': [
-        { nom: 'Fragment d\'os',     valeur_or: 3, type: 'inutile' },
-        { nom: 'Crâne fissuré',      valeur_or: 5, type: 'inutile' },
-        { nom: 'Poussière d\'os',    valeur_or: 2, type: 'inutile' },
-    ],
-    'Loup':      [
-        { nom: 'Griffe de loup',     valeur_or: 6, type: 'inutile' },
-        { nom: 'Poil de loup',       valeur_or: 3, type: 'inutile' },
-        { nom: 'Canine de loup',     valeur_or: 5, type: 'inutile' },
-    ],
-    'Araignée':  [
-        { nom: 'Toile d\'araignée',  valeur_or: 4, type: 'inutile' },
-        { nom: 'Croc venimeux',      valeur_or: 7, type: 'inutile' },
-        { nom: 'Œil d\'araignée',    valeur_or: 5, type: 'inutile' },
-    ],
-    'Troll':     [
-        { nom: 'Peau de troll',      valeur_or: 8, type: 'inutile' },
-        { nom: 'Ongle de troll',     valeur_or: 5, type: 'inutile' },
-        { nom: 'Mucus de troll',     valeur_or: 3, type: 'inutile' },
-    ],
-    'Bandit':    [
-        { nom: 'Pièce rouillée',     valeur_or: 6, type: 'inutile' },
-        { nom: 'Chiffon sale',       valeur_or: 2, type: 'inutile' },
-        { nom: 'Lame émoussée',      valeur_or: 8, type: 'inutile' },
-    ],
-    'Fantôme':   [
-        { nom: 'Éther condensé',     valeur_or: 9, type: 'inutile' },
-        { nom: 'Fragment d\'âme',    valeur_or: 7, type: 'inutile' },
-        { nom: 'Brume spectrale',    valeur_or: 5, type: 'inutile' },
-    ],
-    'Drake':     [
-        { nom: 'Écaille de drake',   valeur_or: 9, type: 'inutile' },
-        { nom: 'Dent de drake',      valeur_or: 7, type: 'inutile' },
-        { nom: 'Griffe de drake',    valeur_or: 8, type: 'inutile' },
-    ],
-    'Golem':     [
-        { nom: 'Fragment de pierre', valeur_or: 5, type: 'inutile' },
-        { nom: 'Éclat cristallin',   valeur_or: 8, type: 'inutile' },
-        { nom: 'Poussière de golem', valeur_or: 3, type: 'inutile' },
-    ],
-};
-const ITEMS_INUTILES_FALLBACK: DonjonItem[] = [
-    { nom: 'Débris inconnu',   valeur_or: 4, type: 'inutile' },
-    { nom: 'Reste étrange',    valeur_or: 3, type: 'inutile' },
-];
-
-export const ITEMS_CONSOMMABLES: DonjonItem[] = [
-    { nom: 'Fiole de rage',            valeur_or: 8,  type: 'consommable', description: '+8 ATQ — 2 tours',      usage: 'combat',      prix_achat: 15, effet: { type: 'boost_attq', valeur: 8,  duree: 2 } },
-    { nom: 'Parchemin de poison',      valeur_or: 10, type: 'consommable', description: 'Empoisonne ennemi 3t',  usage: 'combat',      prix_achat: 18, effet: { type: 'poison',     valeur: 8,  duree: 3 } },
-    { nom: "Poudre d'étourdissement",  valeur_or: 12, type: 'consommable', description: 'Étourdit ennemi 1t',   usage: 'combat',      prix_achat: 20, effet: { type: 'stun',       duree: 1 } },
-    { nom: 'Bandage de fortune',       valeur_or: 6,  type: 'consommable', description: '+10% PV combat',        usage: 'les_deux',    prix_achat: 12, effet: { type: 'soin_pct',   valeur: 10 } },
-    { nom: 'Fiole de mana',            valeur_or: 7,  type: 'consommable', description: '+10% mana',             usage: 'combat',      prix_achat: 12, effet: { type: 'mana_pct',   valeur: 10 } },
-];
-
-const ITEMS_RARES: DonjonItem[] = [
-    { nom: 'Herbe de régénération', valeur_or: 14, type: 'consommable', description: '+15% PV combat',  usage: 'hors_combat', effet: { type: 'soin_pct',  valeur: 15 } },
-    { nom: 'Cristal de mana',       valeur_or: 14, type: 'consommable', description: '+15% mana',       usage: 'hors_combat', effet: { type: 'mana_pct',  valeur: 15 } },
-    { nom: 'Élixir de puissance',   valeur_or: 16, type: 'consommable', description: '+15% PV combat',  usage: 'les_deux',    effet: { type: 'soin_pct',  valeur: 15 } },
-    { nom: 'Ampoule de mana pur',   valeur_or: 16, type: 'consommable', description: '+15% mana',       usage: 'combat',      effet: { type: 'mana_pct',  valeur: 15 } },
-    { nom: 'Potion de sang',        valeur_or: 20, type: 'consommable', description: '+20% PV combat',  usage: 'les_deux',    effet: { type: 'soin_pct',  valeur: 20 } },
-    { nom: 'Essence arcanique',     valeur_or: 20, type: 'consommable', description: '+20% mana',       usage: 'combat',      effet: { type: 'mana_pct',  valeur: 20 } },
-];
-
 export function genererMonstre(etage: number, room: number): CombatUnit {
     const budget = 60 + (etage - 1) * 50 + (room - 1) * 7;
-    const pv_base = Math.floor(budget * 0.55) + Math.floor(Math.random() * 10);
 
-    let reste = budget - Math.floor(budget * 0.1);
-    const attq     = 2 + pick(reste, 0.28); reste -= (attq - 2);
-    const attq_spe = 2 + pick(reste, 0.18); reste -= (attq_spe - 2);
-    const def      = 2 + pick(reste, 0.24); reste -= (def - 2);
-    const def_spe  = 2 + pick(reste, 0.14); reste -= (def_spe - 2);
-    const vitesse  = 2 + Math.max(0, Math.min(reste, Math.floor(Math.random() * 5)));
+    // Stats minimales garanties par étage
+    const min_hp      = 30 + etage * 20;
+    const min_attq    = 4  + etage * 3;
+    const min_attq_spe= 3  + etage * 2;
+    const min_def     = 4  + etage * 3;
+    const min_def_spe = 3  + etage * 2;
+    const min_vitesse = 7  + etage * 2;
 
-    const MONSTRE_ELEMENTS: Record<string, Element> = {
-        'Slime':     'eau',     'Gobelin':   'terre',
-        'Squelette': 'mort',    'Loup':      'air',
-        'Araignée':  'tenebres','Troll':     'vie',
-        'Bandit':    'technologie', 'Fantôme':'surnaturel',
-        'Drake':     'feu',     'Golem':     'lumiere',
-    };
+    // Budget bonus distribué aléatoirement par-dessus les minimums
+    const budget_stats  = budget - Math.floor(budget * 0.1);
+    const somme_mins    = min_attq + min_attq_spe + min_def + min_def_spe + min_vitesse;
+    let   bonus_pool    = Math.max(0, budget_stats - somme_mins);
+
+    const b_attq     = pick(bonus_pool, 0.28); bonus_pool -= b_attq;
+    const b_attq_spe = pick(bonus_pool, 0.18); bonus_pool -= b_attq_spe;
+    const b_def      = pick(bonus_pool, 0.24); bonus_pool -= b_def;
+    const b_def_spe  = pick(bonus_pool, 0.14); bonus_pool -= b_def_spe;
+    const b_vitesse  = pick(bonus_pool, 0.16);
+
+    const attq     = min_attq     + b_attq;
+    const attq_spe = min_attq_spe + b_attq_spe;
+    const def      = min_def      + b_def;
+    const def_spe  = min_def_spe  + b_def_spe;
+    const vitesse  = min_vitesse  + b_vitesse;
+    const pv_base  = min_hp + Math.floor(budget * 0.30) + Math.floor(Math.random() * 10);
+
     const nom = NOMS_MONSTRES[Math.floor(Math.random() * NOMS_MONSTRES.length)];
     const element = MONSTRE_ELEMENTS[nom];
 
@@ -213,24 +119,6 @@ export function genererMonstre(etage: number, room: number): CombatUnit {
 function pick(budget: number, ratio: number): number {
     const max = Math.floor(budget * ratio);
     return max <= 0 ? 0 : Math.floor(Math.random() * (max + 1));
-}
-
-export function lootMonstre(etage: number, room: number, nomMonstre: string): { items: DonjonItem[]; or_base: number } {
-    // Taux selon l'étage : [inutile, consommable, rare]
-    let taux: [number, number, number];
-    if      (etage <= 2) taux = [0.65, 0.28, 0.07];
-    else if (etage <= 5) taux = [0.50, 0.35, 0.15];
-    else                 taux = [0.35, 0.40, 0.25];
-
-    const inutiles = ITEMS_INUTILES[nomMonstre] ?? ITEMS_INUTILES_FALLBACK;
-    const r = Math.random();
-    let item: DonjonItem;
-    if      (r < taux[0])              item = inutiles[Math.floor(Math.random() * inutiles.length)];
-    else if (r < taux[0] + taux[1])    item = ITEMS_CONSOMMABLES[Math.floor(Math.random() * ITEMS_CONSOMMABLES.length)];
-    else                               item = ITEMS_RARES[Math.floor(Math.random() * ITEMS_RARES.length)];
-
-    const or_base = Math.floor(2 + etage * 1.5 + room * 0.5 + Math.random() * 5);
-    return { items: [item], or_base };
 }
 
 // ── Initialisation du combat ──────────────────────────────────────────────────
@@ -758,31 +646,71 @@ function tourJoueur(state: CombatState, action: ActionCombat): CombatState {
 
 // ── Tour du monstre (IA) ──────────────────────────────────────────────────────
 
+function appliquerDegatsSkillMonstre(
+    monstre: CombatUnit, joueur: CombatUnit, skill: MonstreSkill, log: string[]
+): { joueur: CombatUnit; monstre: CombatUnit } {
+    const comp = {
+        id: 0, nom: skill.nom, description: '', type: 'attaque' as const,
+        effet_type: skill.effet_type, puissance: skill.puissance,
+        effet_secondaire: null, valeur: 0, duree_tours: 0,
+        rarete: 'commun' as const, prix_boutique: 0,
+        element: skill.element, cout_mana: 0,
+    };
+    const chance = chanceToucher(monstre, joueur);
+    if (Math.random() * 100 >= chance) {
+        log.push(`💨 ${monstre.nom} utilise ${skill.nom} mais ${joueur.nom} esquive !`);
+        return { joueur, monstre };
+    }
+    let { degats, typeMulti } = calculerDegatsCompetence(monstre, joueur, comp);
+    const reduction = joueur.statuts.find(s => s.type === 'reduction_degats');
+    if (reduction) degats = Math.max(1, Math.floor(degats * (1 - reduction.valeur / 100)));
+    joueur = { ...joueur, pv_actuels: Math.max(0, joueur.pv_actuels - degats) };
+    log.push(`🔮 ${monstre.nom} utilise ${skill.nom} pour ${degats} dégâts${typeMultiLabel(typeMulti)}`);
+    const riposte = joueur.statuts.find(s => s.type === 'riposte');
+    if (riposte) {
+        const riposteDeg = Math.max(1, Math.floor(degats * riposte.valeur / 100));
+        monstre = { ...monstre, pv_actuels: Math.max(0, monstre.pv_actuels - riposteDeg) };
+        log.push(`🛡 Riposte ! ${joueur.nom} renvoie ${riposteDeg} dégâts !`);
+    }
+    return { joueur, monstre };
+}
+
 function tourMonstre(state: CombatState): CombatState {
     const log = [...state.log];
     let { joueur, monstre } = state;
 
-    const chance = chanceToucher(monstre, joueur);
-    if (Math.random() * 100 >= chance) {
-        log.push(`💨 ${monstre.nom} attaque mais ${joueur.nom} esquive !`);
-    } else {
-        let { degats, typeMulti } = calculerDegats(monstre, joueur, 'physique', monstre.element);
+    const skills = MONSTRE_SKILLS[monstre.nom];
+    const manaParSort = Math.max(1, Math.floor(monstre.mana_max / 5));
+    const r = Math.random();
 
-        // Réduction des dégâts subis
-        const reduction = joueur.statuts.find(s => s.type === 'reduction_degats');
-        if (reduction) {
-            degats = Math.max(1, Math.floor(degats * (1 - reduction.valeur / 100)));
+    if (skills) {
+        if (monstre.mana >= manaParSort && r < 0.45) {
+            // Compétence élémentaire (coûte du mana)
+            const skill = Math.random() < 0.5 ? skills.elem_phys : skills.elem_mag;
+            monstre = { ...monstre, mana: monstre.mana - manaParSort };
+            ({ joueur, monstre } = appliquerDegatsSkillMonstre(monstre, joueur, skill, log));
+        } else {
+            // Compétence neutre = attaque de base
+            const skill = Math.random() < 0.5 ? skills.neutre_phys : skills.neutre_mag;
+            ({ joueur, monstre } = appliquerDegatsSkillMonstre(monstre, joueur, skill, log));
         }
-
-        joueur = { ...joueur, pv_actuels: Math.max(0, joueur.pv_actuels - degats) };
-        log.push(`👹 ${monstre.nom} attaque pour ${degats} dégâts${typeMultiLabel(typeMulti)}`);
-
-        // Riposte
-        const riposte = joueur.statuts.find(s => s.type === 'riposte');
-        if (riposte) {
-            const riposteDeg = Math.max(1, Math.floor(degats * riposte.valeur / 100));
-            monstre = { ...monstre, pv_actuels: Math.max(0, monstre.pv_actuels - riposteDeg) };
-            log.push(`🛡 Riposte ! ${joueur.nom} renvoie ${riposteDeg} dégâts !`);
+    } else {
+        // Fallback attaque brute (monstre sans pool défini)
+        const chance = chanceToucher(monstre, joueur);
+        if (Math.random() * 100 >= chance) {
+            log.push(`💨 ${monstre.nom} attaque mais ${joueur.nom} esquive !`);
+        } else {
+            let { degats, typeMulti } = calculerDegats(monstre, joueur, 'physique', monstre.element);
+            const reduction = joueur.statuts.find(s => s.type === 'reduction_degats');
+            if (reduction) degats = Math.max(1, Math.floor(degats * (1 - reduction.valeur / 100)));
+            joueur = { ...joueur, pv_actuels: Math.max(0, joueur.pv_actuels - degats) };
+            log.push(`👹 ${monstre.nom} attaque pour ${degats} dégâts${typeMultiLabel(typeMulti)}`);
+            const riposte = joueur.statuts.find(s => s.type === 'riposte');
+            if (riposte) {
+                const riposteDeg = Math.max(1, Math.floor(degats * riposte.valeur / 100));
+                monstre = { ...monstre, pv_actuels: Math.max(0, monstre.pv_actuels - riposteDeg) };
+                log.push(`🛡 Riposte ! ${joueur.nom} renvoie ${riposteDeg} dégâts !`);
+            }
         }
     }
 

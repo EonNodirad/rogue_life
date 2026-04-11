@@ -1,5 +1,19 @@
 export type Rarete = 'commun' | 'peu_commun' | 'rare' | 'epique' | 'legendaire'
 
+export interface DonjonItem {
+    nom: string;
+    valeur_or: number;
+    type: 'inutile' | 'consommable' | 'rare';
+    description?: string;
+    usage?: 'combat' | 'hors_combat' | 'les_deux';
+    prix_achat?: number;
+    effet?: {
+        type: 'boost_attq' | 'poison' | 'stun' | 'soin_pct' | 'mana_pct';
+        valeur?: number;
+        duree?: number;
+    };
+}
+
 export type GameMode = 'normal' | 'hard' | 'cauchemar'
 
 export interface Personnage {
