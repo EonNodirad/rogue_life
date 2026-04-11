@@ -307,8 +307,11 @@
     });
 
     // Auto-sauvegarder au départ de la page si une run est en cours
+    // Ne pas sauvegarder si phase='lobby' : la sauvegarde correcte a déjà été faite
+    // (quitterDonjon/continuerApresLoot l'ont écrite), et sauvegarder à nouveau ici
+    // écraserait la phase correcte (ex: 'gacha' salle 10) avec 'lobby' salle 10.
     beforeNavigate(() => {
-        if ((salle > 0 || etageEnCours) && phase !== 'mort') {
+        if ((salle > 0 || etageEnCours) && phase !== 'mort' && phase !== 'lobby') {
             sauvegarderProgression();
             aSauvegarde = true;
         }
@@ -330,7 +333,10 @@
             gachaEstFinEtage = (salle === 10);
             genererGachaChoix();
             phase = 'gacha';
-        } else if (savedPhase === 'ravito' || savedPhase === 'inter_salle' || savedPhase === 'donjon_shop') {
+        } else if (savedPhase === 'ravito') {
+            genererGachaChoix(); // gachaChoix n'est pas persisté, doit être régénéré
+            phase = 'ravito';
+        } else if (savedPhase === 'inter_salle' || savedPhase === 'donjon_shop') {
             phase = savedPhase;
         } else if (savedPhase === 'lobby') {
             // Entre deux étages (salle=0) : lancer la salle 1 du nouvel étage
