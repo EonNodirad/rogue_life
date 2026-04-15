@@ -1,6 +1,7 @@
 <script lang="ts">
     import { onMount } from "svelte";
-    import { getPersonnage, getCaracteristique, getLevels, getInventaire, getStuffs, allouerStat, acheterStat, gameOver, changerMode, STAT_SHOP_PRIX, getPersonnageAffinites, renommerPersonnage, getTitres, changerTitre, calculerStreak, calculerEtAttribuerTitre, calculerTitresDebloques, type StatAllouable } from "$lib/db";
+    import { base } from '$app/paths';
+    import { getPersonnage, getCaracteristique, getLevels, getInventaire, getStuffs, allouerStat, acheterStat, gameOver, changerMode, STAT_SHOP_PRIX, getPersonnageAffinites, renommerPersonnage, getTitres, changerTitre, changerAvatar, calculerStreak, calculerEtAttribuerTitre, calculerTitresDebloques, type StatAllouable } from "$lib/db";
     import { refreshCharacterStore } from "$lib/stores";
     import type { Personnage, Caracteristique, Level, stuff, inventaire, GameMode, PersonnageAffinite, Titre } from "$lib/types";
     import { ELEMENT_ICONS } from "$lib/icons";
@@ -14,6 +15,19 @@
     let classesDebloquees = $state<number[]>([]);
     let classeModalOuvert = $state(false);
     let titreModalOuvert = $state(false);
+    let avatarModalOuvert = $state(false);
+
+    const AVATARS = [
+        'assasine 2.png',
+        'avatar-archere.png','avatar-archer.png','avatar-assassin.png','avatar-barbare.png',
+        'avatar_chevaliere.png','avatar-chevalier-noir.png','avatar-chevalier.png',
+        'avatar-dwarf.png','avatar-elementaliste.png',
+        'avatar-guerrier-2.png','avatar-guerrier4.png','avatar-guerrier5.png','guerrier-3.png',
+        'avatar-mage-2.png','avatar-mage-noir.png','avatar-mage.png',
+        'avatar-malinx.png','avatar-musicienne.png','avatar-musicienne2.png','avatar-runique.png',
+        'avatar-samourai-woman.png','avatar-voleuse.png',
+        'avatr-barbare-2.png','avatr-guerriere-2.png','avatr-moine.png','avatr-pirate-woman.png','avatr-technicienne.png',
+    ];
     let titres = $state<Titre[]>([]);
     let titresDebloques = $state<number[]>([1]);
     let streakActuel = $state(0);
@@ -211,7 +225,13 @@
 <div class="profil">
 
     <div class="perso">
-        <div class="avatar"></div>
+        <button class="avatar" onclick={() => avatarModalOuvert = true} title="Changer d'avatar">
+            {#if personnage.avatar}
+                <img src="{base}/avatar/{personnage.avatar}" alt="Avatar" />
+            {:else}
+                <span class="avatar-placeholder">?</span>
+            {/if}
+        </button>
         <div class="infos">
             <div class="name">{personnage.nom}</div>
             <div class="meta">
@@ -484,6 +504,33 @@
 </div>
 {/if}
 
+{#if avatarModalOuvert}
+<!-- svelte-ignore a11y_click_events_have_key_events -->
+<!-- svelte-ignore a11y_no_static_element_interactions -->
+<div class="gameover-overlay" onclick={() => avatarModalOuvert = false}>
+    <!-- svelte-ignore a11y_click_events_have_key_events -->
+    <!-- svelte-ignore a11y_no_static_element_interactions -->
+    <div class="gameover-modal avatar-modal" onclick={(e) => e.stopPropagation()}>
+        <div class="gameover-titre">Choisir un avatar</div>
+        <div class="avatar-grid">
+            {#each AVATARS as av}
+            <button
+                class="avatar-choice"
+                class:avatar-choice-actif={personnage?.avatar === av}
+                onclick={async () => {
+                    await changerAvatar(1, av);
+                    await charger();
+                    avatarModalOuvert = false;
+                }}>
+                <img src="{base}/avatar/{av}" alt={av} />
+            </button>
+            {/each}
+        </div>
+        <button class="cancel-btn" onclick={() => avatarModalOuvert = false}>Fermer</button>
+    </div>
+</div>
+{/if}
+
 {#if nomModal}
 <div class="gameover-overlay">
     <div class="gameover-modal">
@@ -534,7 +581,39 @@
     border-radius: 50%;
     background-color: #444;
     flex-shrink: 0;
+    padding: 0;
+    border: none;
+    cursor: pointer;
+    overflow: hidden;
+    display: flex;
+    align-items: center;
+    justify-content: center;
   }
+  .avatar:hover { border: 2px solid #aaa; }
+  .avatar img { width: 100%; height: 100%; object-fit: cover; }
+  .avatar-placeholder { font-size: 2rem; color: #888; }
+  .avatar-modal { max-width: 380px; width: 90vw; }
+  .avatar-grid {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 10px;
+    margin: 16px 0;
+    max-height: 55vh;
+    overflow-y: auto;
+  }
+  .avatar-choice {
+    width: 100%;
+    aspect-ratio: 1;
+    border-radius: 50%;
+    overflow: hidden;
+    border: 2px solid transparent;
+    padding: 0;
+    cursor: pointer;
+    background: #333;
+  }
+  .avatar-choice:hover { border-color: #aaa; }
+  .avatar-choice-actif { border-color: gold; }
+  .avatar-choice img { width: 100%; height: 100%; object-fit: cover; }
   .name {
     font-size: 1.4rem;
     font-weight: bold;

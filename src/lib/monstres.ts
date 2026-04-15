@@ -43,7 +43,7 @@ type MonstrePool = { neutre_phys: MonstreSkill; neutre_mag: MonstreSkill; elem_p
 export const MONSTRE_SKILLS: Record<string, MonstrePool> = {
     'Slime':     { neutre_phys: { nom: 'Bave collante',            element: 'neutre',      effet_type: 'physique', puissance: 45 },
                    neutre_mag:  { nom: 'Dissolution acide',        element: 'neutre',      effet_type: 'magique',  puissance: 35 },
-                   elem_phys:   { nom: 'Vague déferlante',         element: 'eau',         effet_type: 'physique', puissance: 55 },
+                   elem_phys:   { nom: 'Gelé déferlante',         element: 'eau',         effet_type: 'physique', puissance: 55 },
                    elem_mag:    { nom: 'Déluge visqueux',          element: 'eau',         effet_type: 'magique',  puissance: 60 } },
     'Gobelin':   { neutre_phys: { nom: 'Coup de massue',           element: 'neutre',      effet_type: 'physique', puissance: 50 },
                    neutre_mag:  { nom: 'Lancer de pierre',         element: 'neutre',      effet_type: 'magique',  puissance: 40 },
@@ -74,7 +74,7 @@ export const MONSTRE_SKILLS: Record<string, MonstrePool> = {
                    elem_phys:   { nom: 'Étreinte spectrale',       element: 'surnaturel',  effet_type: 'physique', puissance: 55 },
                    elem_mag:    { nom: "Cri de l'au-delà",         element: 'surnaturel',  effet_type: 'magique',  puissance: 60 } },
     'Drake':     { neutre_phys: { nom: 'Coup de queue',            element: 'neutre',      effet_type: 'physique', puissance: 50 },
-                   neutre_mag:  { nom: 'Grognement menaçant',      element: 'neutre',      effet_type: 'magique',  puissance: 40 },
+                   neutre_mag:  { nom: 'Souffle draconique',      element: 'neutre',      effet_type: 'magique',  puissance: 40 },
                    elem_phys:   { nom: 'Griffes enflammées',       element: 'feu',         effet_type: 'physique', puissance: 55 },
                    elem_mag:    { nom: 'Souffle de feu',           element: 'feu',         effet_type: 'magique',  puissance: 65 } },
     'Golem':     { neutre_phys: { nom: 'Coup de pierre',           element: 'neutre',      effet_type: 'physique', puissance: 50 },

@@ -3,6 +3,7 @@ import initSqlJs from 'sql.js';
 import type { Database } from 'sql.js';
 import initSql from '$lib/init.sql?raw';
 import migration001Sql from '$lib/migration_001.sql?raw';
+import migration002Sql from '$lib/migration_002.sql?raw';
 import type {
     Personnage, Caracteristique, Level, Titre, Classe,
     Monstre, Donjon, Donjon_Monstre, historique_poids,
@@ -64,6 +65,10 @@ async function getDb(): Promise<Database> {
         const version = (sqlDb.exec('PRAGMA user_version')[0]?.values[0]?.[0] as number) ?? 0;
         if (version < 1) {
             sqlDb.run(migration001Sql);
+            await saveDb();
+        }
+        if (version < 2) {
+            sqlDb.run(migration002Sql);
             await saveDb();
         }
     } else {
@@ -1002,6 +1007,12 @@ export async function checkModeCoffres(personnage_id: number): Promise<{ hebdo: 
 export async function renommerPersonnage(personnage_id: number, nom: string): Promise<void> {
     await getDb();
     dbRun('UPDATE personnage SET nom = $1 WHERE id = $2', [nom.trim(), personnage_id]);
+    await saveDb();
+}
+
+export async function changerAvatar(personnage_id: number, avatar: string): Promise<void> {
+    await getDb();
+    dbRun('UPDATE personnage SET avatar = $1 WHERE id = $2', [avatar, personnage_id]);
     await saveDb();
 }
 

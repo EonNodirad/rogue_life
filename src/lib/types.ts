@@ -32,6 +32,7 @@ export interface Personnage {
     mode_debut: string | null
     dernier_coffre_hebdo: string | null
     dernier_coffre_mensuel: string | null
+    avatar: string | null
 }
 
 export interface Caracteristique {
