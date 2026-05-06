@@ -4,12 +4,15 @@ import type { Database } from 'sql.js';
 import initSql from '$lib/init.sql?raw';
 import migration001Sql from '$lib/migration_001.sql?raw';
 import migration002Sql from '$lib/migration_002.sql?raw';
+import migration003Sql from '$lib/migration_003.sql?raw';
+import migration004Sql from '$lib/migration_004.sql?raw';
 import type {
     Personnage, Caracteristique, Level, Titre, Classe,
     Monstre, Donjon, Donjon_Monstre, historique_poids,
     stuff, inventaire, magasin, magasin_inventaire,
     tache, historique_activite,
-    Competence, PersonnageCompetence, PersonnageAffinite, Rarete, GameMode
+    Competence, PersonnageCompetence, PersonnageAffinite, Rarete, GameMode,
+    Quete, QueteEtape
 } from './types';
 
 // ── IndexedDB persistence ─────────────────────────────────────────────────────
@@ -69,6 +72,14 @@ async function getDb(): Promise<Database> {
         }
         if (version < 2) {
             sqlDb.run(migration002Sql);
+            await saveDb();
+        }
+        if (version < 3) {
+            sqlDb.run(migration003Sql);
+            await saveDb();
+        }
+        if (version < 4) {
+            sqlDb.run(migration004Sql);
             await saveDb();
         }
     } else {
@@ -1114,6 +1125,10 @@ export async function calculerTitresDebloques(personnage_id: number): Promise<nu
          WHERE pc.personnage_id = $1 AND c.rarete = 'legendaire'`, [personnage_id]);
     if ((leg[0]?.cnt ?? 0) >= 3) debloques.push(30);
 
+    // Titres gagnés via quêtes (IDs dynamiques > 30)
+    const customTitres = dbSelect<{ id: number }>('SELECT id FROM titre WHERE id > 30');
+    for (const t of customTitres) debloques.push(t.id);
+
     return debloques;
 }
 
@@ -1133,6 +1148,87 @@ export async function _classesSelect<T>(sql: string, params: unknown[] = []): Pr
 export async function _classesRun(sql: string, params: unknown[] = []): Promise<void> {
     await getDb();
     dbRun(sql, params);
+    await saveDb();
+}
+
+// ── Quêtes ────────────────────────────────────────────────────────────────────
+
+export async function getQuetes(personnage_id: number): Promise<Quete[]> {
+    await getDb();
+    const quetes = dbSelect<Quete>(
+        "SELECT * FROM quete WHERE personnage_id = $1 AND statut = 'en_cours' ORDER BY type DESC, date_creation ASC",
+        [personnage_id]
+    );
+    for (const q of quetes) {
+        q.etapes = dbSelect<QueteEtape>('SELECT * FROM quete_etape WHERE quete_id = $1 ORDER BY id', [q.id]);
+    }
+    return quetes;
+}
+
+export async function createQuete(
+    q: Omit<Quete, 'id' | 'statut' | 'date_creation' | 'etapes'>,
+    etapes: string[]
+): Promise<void> {
+    await getDb();
+    dbRun(
+        `INSERT INTO quete (personnage_id, nom, description, type, exp_recompense, gold_recompense, titre_recompense, date_creation)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8)`,
+        [q.personnage_id, q.nom, q.description, q.type, q.exp_recompense, q.gold_recompense, q.titre_recompense ?? null, new Date().toISOString()]
+    );
+    const quete_id = (dbSelect<{ id: number }>('SELECT last_insert_rowid() as id'))[0].id;
+    for (const nom of etapes) {
+        dbRun('INSERT INTO quete_etape (quete_id, nom) VALUES ($1,$2)', [quete_id, nom]);
+    }
+    await saveDb();
+}
+
+export async function completerEtape(etape_id: number, personnage_id: number): Promise<void> {
+    await getDb();
+    const etape = dbSelect<QueteEtape>('SELECT * FROM quete_etape WHERE id = $1', [etape_id])[0];
+    if (!etape || etape.complete) return;
+    const quete = dbSelect<Quete>('SELECT * FROM quete WHERE id = $1', [etape.quete_id])[0];
+    if (!quete) return;
+    const nb = (dbSelect<{ n: number }>('SELECT COUNT(*) as n FROM quete_etape WHERE quete_id = $1', [quete.id]))[0].n;
+    const xp   = Math.round((quete.exp_recompense  * 0.5) / nb);
+    const gold = Math.round((quete.gold_recompense * 0.5) / nb);
+    dbRun('UPDATE quete_etape SET complete = 1 WHERE id = $1', [etape_id]);
+    dbRun(
+        'UPDATE personnage SET experience_actuelle = experience_actuelle + $1, gold_actuel = gold_actuel + $2 WHERE id = $3',
+        [xp, gold, personnage_id]
+    );
+    await saveDb();
+}
+
+export async function completerQuete(quete_id: number, personnage_id: number): Promise<void> {
+    await getDb();
+    const quete = dbSelect<Quete>('SELECT * FROM quete WHERE id = $1', [quete_id])[0];
+    if (!quete) return;
+    const nb = (dbSelect<{ n: number }>('SELECT COUNT(*) as n FROM quete_etape WHERE quete_id = $1', [quete_id]))[0].n;
+    const fraction = nb > 0 ? 0.5 : 1.0;
+    const xp   = Math.round(quete.exp_recompense  * fraction);
+    const gold = Math.round(quete.gold_recompense * fraction);
+    dbRun(
+        'UPDATE personnage SET experience_actuelle = experience_actuelle + $1, gold_actuel = gold_actuel + $2 WHERE id = $3',
+        [xp, gold, personnage_id]
+    );
+    if (quete.titre_recompense) {
+        dbRun("INSERT INTO titre (nom, bonus_stat) VALUES ($1, 'aucun')", [quete.titre_recompense]);
+        const titreId = (dbSelect<{ id: number }>('SELECT last_insert_rowid() as id'))[0].id;
+        dbRun('UPDATE personnage SET titre_id = $1 WHERE id = $2', [titreId, personnage_id]);
+    }
+    dbRun("UPDATE quete SET statut = 'complete' WHERE id = $1", [quete_id]);
+    await saveDb();
+}
+
+export async function abandonnerQuete(quete_id: number): Promise<void> {
+    await getDb();
+    dbRun("UPDATE quete SET statut = 'abandonnee' WHERE id = $1", [quete_id]);
+    await saveDb();
+}
+
+export async function ajouterEtapeQuete(quete_id: number, nom: string): Promise<void> {
+    await getDb();
+    dbRun('INSERT INTO quete_etape (quete_id, nom) VALUES ($1,$2)', [quete_id, nom.trim()]);
     await saveDb();
 }
 

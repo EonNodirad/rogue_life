@@ -202,3 +202,24 @@ export interface historique_activite{
     statut:string
     nom_tache:string
 }
+
+export interface QueteEtape {
+    id: number
+    quete_id: number
+    nom: string
+    complete: number  // 0 | 1
+}
+
+export interface Quete {
+    id: number
+    personnage_id: number
+    nom: string
+    description: string
+    type: 'principale' | 'secondaire'
+    exp_recompense: number
+    gold_recompense: number
+    titre_recompense: string | null
+    date_creation: string
+    statut: 'en_cours' | 'complete' | 'abandonnee'
+    etapes: QueteEtape[]
+}

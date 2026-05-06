@@ -1,8 +1,8 @@
 <script lang="ts">
     import { onMount } from 'svelte';
-    import { getTaches, createTache, completerTache, echouerTache, completerRoutine, supprimerRoutine, getHistoriqueActivite, ROUTINE_STATS, checkLevelUp, getStuffs, getCompetencesDonjon, getPersonnageCompetences, ajouterRecompenseDonjon, checkModeCoffres, calculerStreak } from '$lib/db';
+    import { getTaches, createTache, completerTache, echouerTache, completerRoutine, supprimerRoutine, getHistoriqueActivite, ROUTINE_STATS, checkLevelUp, getStuffs, getCompetencesDonjon, getPersonnageCompetences, ajouterRecompenseDonjon, checkModeCoffres, calculerStreak, getQuetes, createQuete, completerEtape, completerQuete, abandonnerQuete, ajouterEtapeQuete } from '$lib/db';
     import { refreshCharacterStore } from '$lib/stores';
-    import type { tache, historique_activite, Rarete } from '$lib/types';
+    import type { tache, historique_activite, Rarete, Quete } from '$lib/types';
     import { piocherLoot } from '$lib/loot';
     import type { LootOption } from '$lib/loot';
 
@@ -45,6 +45,17 @@
 
     let gameOverModal = $state(false);
 
+    // Onglets
+    let activeTab = $state<'taches' | 'routines' | 'quetes' | 'historique'>('taches');
+
+    // Quêtes
+    let quetes = $state<Quete[]>([]);
+    let showModalQuete = $state(false);
+    let newQuete = $state({ nom: '', description: '', type: 'secondaire' as 'principale' | 'secondaire', exp_recompense: 0, gold_recompense: 0, titre_recompense: '' });
+    let nouvellesEtapes = $state<string[]>([]);
+    let nouvelleEtapeInput = $state('');
+    let etapeInlineInput = $state<Record<number, string>>({});
+
     async function confirmerGameOver() {
         localStorage.removeItem('donjon_save_1');
         localStorage.removeItem('donjon_cleared_1');
@@ -77,6 +88,8 @@
         const streak = await calculerStreak(1);
         streakActuel = streak.actuel;
         streakRecord = streak.record;
+
+        quetes = await getQuetes(1);
     }
 
     // File d'attente pour les coffres de mode (hebdo/mensuel)
@@ -234,6 +247,59 @@
 
     const diffLabel = (d: number) => (['', 'Facile', 'Moyen', 'Difficile'][d] ?? String(d));
 
+    async function cocherEtape(etape_id: number) {
+        await completerEtape(etape_id, 1);
+        const lu = await checkLevelUp(1);
+        if (lu.levels_gagnes > 0) afficherToast(`🎉 LEVEL UP ! ${lu.points_gagnes} points à distribuer`);
+        await refreshCharacterStore();
+        await charger();
+    }
+
+    async function terminerQuete(quete_id: number) {
+        await completerQuete(quete_id, 1);
+        const lu = await checkLevelUp(1);
+        if (lu.levels_gagnes > 0) afficherToast(`🎉 LEVEL UP ! ${lu.points_gagnes} points à distribuer`);
+        await refreshCharacterStore();
+        await charger();
+    }
+
+    async function quitterQuete(quete_id: number) {
+        await abandonnerQuete(quete_id);
+        await charger();
+    }
+
+    function ajouterEtape() {
+        const nom = nouvelleEtapeInput.trim();
+        if (!nom) return;
+        nouvellesEtapes = [...nouvellesEtapes, nom];
+        nouvelleEtapeInput = '';
+    }
+
+    function retirerEtape(i: number) {
+        nouvellesEtapes = nouvellesEtapes.filter((_, idx) => idx !== i);
+    }
+
+    async function ajouterEtapeInline(quete_id: number) {
+        const nom = (etapeInlineInput[quete_id] ?? '').trim();
+        if (!nom) return;
+        await ajouterEtapeQuete(quete_id, nom);
+        etapeInlineInput = { ...etapeInlineInput, [quete_id]: '' };
+        await charger();
+    }
+
+    async function soumettreQuete() {
+        if (!newQuete.nom.trim()) return;
+        await createQuete(
+            { personnage_id: 1, ...newQuete, titre_recompense: newQuete.titre_recompense.trim() || null },
+            nouvellesEtapes
+        );
+        showModalQuete = false;
+        newQuete = { nom: '', description: '', type: 'secondaire', exp_recompense: 0, gold_recompense: 0, titre_recompense: '' };
+        nouvellesEtapes = [];
+        nouvelleEtapeInput = '';
+        await charger();
+    }
+
 </script>
 
 <div class="tasks">
@@ -244,7 +310,16 @@
 
     {#if erreur}<p class="erreur">{erreur}</p>{/if}
 
+    <!-- TABS -->
+    <div class="tabs">
+        <button class="tab-btn" class:active={activeTab === 'taches'}    onclick={() => activeTab = 'taches'}>Tâches</button>
+        <button class="tab-btn" class:active={activeTab === 'routines'}  onclick={() => activeTab = 'routines'}>Routines</button>
+        <button class="tab-btn" class:active={activeTab === 'quetes'}    onclick={() => activeTab = 'quetes'}>Quêtes</button>
+        <button class="tab-btn" class:active={activeTab === 'historique'} onclick={() => activeTab = 'historique'}>Historique</button>
+    </div>
+
     <!-- PONCTUELLES -->
+    {#if activeTab === 'taches'}
     <div class="section-header">
         <h2>Tâches</h2>
         <button class="btn-add" onclick={() => ouvrirModale('ponctuelle')}>+</button>
@@ -272,9 +347,11 @@
         </div>
         {/each}
     {/if}
+    {/if}
 
     <!-- ROUTINES -->
-    <div class="section-header" style="margin-top: 20px;">
+    {#if activeTab === 'routines'}
+    <div class="section-header">
         <h2>Routines</h2>
         <button class="btn-add" onclick={() => ouvrirModale('routine')}>+</button>
     </div>
@@ -314,10 +391,131 @@
         </div>
         {/each}
     {/if}
+    {/if}
+
+    <!-- QUÊTES -->
+    {#if activeTab === 'quetes'}
+    {@const principales = quetes.filter(q => q.type === 'principale')}
+    {@const secondaires = quetes.filter(q => q.type === 'secondaire')}
+
+    <div class="section-header">
+        <h2>Quêtes</h2>
+        <button class="btn-add" onclick={() => showModalQuete = true}>+</button>
+    </div>
+
+    <!-- Principales -->
+    <h3 class="quete-type-label">🎯 Principales</h3>
+    {#if principales.length === 0}
+        <p class="vide">Aucune quête principale.</p>
+    {:else}
+        {#each principales as q}
+        {@const etapes = q.etapes ?? []}
+        {@const nb = etapes.length}
+        {@const faites = etapes.filter(e => e.complete).length}
+        {@const xpEtape = nb > 0 ? Math.round((q.exp_recompense * 0.5) / nb) : 0}
+        {@const goldEtape = nb > 0 ? Math.round((q.gold_recompense * 0.5) / nb) : 0}
+        <div class="quete-card">
+            <div class="quete-header">
+                <span class="tache-nom">{q.nom}</span>
+                <div class="quete-actions">
+                    <button class="btn-ok btn-sm" onclick={() => terminerQuete(q.id)}>✓ Terminer</button>
+                    <button class="btn-del" onclick={() => quitterQuete(q.id)}>×</button>
+                </div>
+            </div>
+            {#if q.description}<p class="quete-desc">{q.description}</p>{/if}
+            <div class="quete-rewards">
+                <span>⚔️ +{q.exp_recompense} XP · 🪙 +{q.gold_recompense}g</span>
+                {#if q.titre_recompense}<span class="quete-titre-badge">🏆 {q.titre_recompense}</span>{/if}
+            </div>
+            {#if nb > 0}
+            <div class="quete-progress">
+                <div class="progress-bar"><div class="progress-fill" style="width:{(faites/nb)*100}%"></div></div>
+                <span class="progress-label">{faites}/{nb} étapes</span>
+            </div>
+            <ul class="etapes-list">
+                {#each etapes as etape}
+                <li class="etape" class:done={!!etape.complete}>
+                    {#if etape.complete}
+                        <span class="etape-check done">✔</span>
+                        <span class="etape-nom done">{etape.nom}</span>
+                    {:else}
+                        <button class="etape-check" onclick={() => cocherEtape(etape.id)}>○</button>
+                        <span class="etape-nom">{etape.nom}</span>
+                        <span class="etape-gain">+{xpEtape} XP / +{goldEtape}g</span>
+                    {/if}
+                </li>
+                {/each}
+            </ul>
+            {/if}
+            <div class="etape-inline-row">
+                <input class="etape-inline-input" bind:value={etapeInlineInput[q.id]}
+                    placeholder="Ajouter une étape…"
+                    onkeydown={(e) => { if (e.key === 'Enter') ajouterEtapeInline(q.id); }} />
+                <button class="btn-add-etape-inline" onclick={() => ajouterEtapeInline(q.id)}>+</button>
+            </div>
+        </div>
+        {/each}
+    {/if}
+
+    <!-- Secondaires -->
+    <h3 class="quete-type-label" style="margin-top:16px">🗺️ Secondaires</h3>
+    {#if secondaires.length === 0}
+        <p class="vide">Aucune quête secondaire.</p>
+    {:else}
+        {#each secondaires as q}
+        {@const etapes = q.etapes ?? []}
+        {@const nb = etapes.length}
+        {@const faites = etapes.filter(e => e.complete).length}
+        {@const xpEtape = nb > 0 ? Math.round((q.exp_recompense * 0.5) / nb) : 0}
+        {@const goldEtape = nb > 0 ? Math.round((q.gold_recompense * 0.5) / nb) : 0}
+        <div class="quete-card">
+            <div class="quete-header">
+                <span class="tache-nom">{q.nom}</span>
+                <div class="quete-actions">
+                    <button class="btn-ok btn-sm" onclick={() => terminerQuete(q.id)}>✓ Terminer</button>
+                    <button class="btn-del" onclick={() => quitterQuete(q.id)}>×</button>
+                </div>
+            </div>
+            {#if q.description}<p class="quete-desc">{q.description}</p>{/if}
+            <div class="quete-rewards">
+                <span>⚔️ +{q.exp_recompense} XP · 🪙 +{q.gold_recompense}g</span>
+                {#if q.titre_recompense}<span class="quete-titre-badge">🏆 {q.titre_recompense}</span>{/if}
+            </div>
+            {#if nb > 0}
+            <div class="quete-progress">
+                <div class="progress-bar"><div class="progress-fill" style="width:{(faites/nb)*100}%"></div></div>
+                <span class="progress-label">{faites}/{nb} étapes</span>
+            </div>
+            <ul class="etapes-list">
+                {#each etapes as etape}
+                <li class="etape" class:done={!!etape.complete}>
+                    {#if etape.complete}
+                        <span class="etape-check done">✔</span>
+                        <span class="etape-nom done">{etape.nom}</span>
+                    {:else}
+                        <button class="etape-check" onclick={() => cocherEtape(etape.id)}>○</button>
+                        <span class="etape-nom">{etape.nom}</span>
+                        <span class="etape-gain">+{xpEtape} XP / +{goldEtape}g</span>
+                    {/if}
+                </li>
+                {/each}
+            </ul>
+            {/if}
+            <div class="etape-inline-row">
+                <input class="etape-inline-input" bind:value={etapeInlineInput[q.id]}
+                    placeholder="Ajouter une étape…"
+                    onkeydown={(e) => { if (e.key === 'Enter') ajouterEtapeInline(q.id); }} />
+                <button class="btn-add-etape-inline" onclick={() => ajouterEtapeInline(q.id)}>+</button>
+            </div>
+        </div>
+        {/each}
+    {/if}
+    {/if}
 
     <!-- HISTORIQUE -->
+    {#if activeTab === 'historique'}
     {#if historique.length > 0}
-    <h3 style="margin-top: 20px;">Historique récent</h3>
+    <h3>Historique récent</h3>
     {#each historique as h}
     <div class="histo-row {h.statut}">
         <span>{h.nom_tache || `Tâche #${h.tache_id}`}</span>
@@ -331,6 +529,9 @@
         <span class="date">{new Date(h.date_action).toLocaleDateString()}</span>
     </div>
     {/each}
+    {:else}
+        <p class="vide">Aucun historique.</p>
+    {/if}
     {/if}
 </div>
 
@@ -367,6 +568,62 @@
             <p style="color:#888;font-size:0.85rem;text-align:center">Inventaire complet, rien à offrir.</p>
             <button class="btn-cancel" onclick={() => { localStorage.setItem(LOOT_WEEK_KEY, semaineISO()); lootModalOuvert = false; }}>Fermer</button>
             {/if}
+        </div>
+    </div>
+</div>
+{/if}
+
+<!-- MODALE QUÊTE -->
+{#if showModalQuete}
+<!-- svelte-ignore a11y_click_events_have_key_events -->
+<!-- svelte-ignore a11y_no_static_element_interactions -->
+<div class="overlay" onclick={(e) => { if (e.target === e.currentTarget) showModalQuete = false; }}>
+    <div class="modale">
+        <h3>Nouvelle quête</h3>
+
+        <label>Nom <input bind:value={newQuete.nom} placeholder="Ex: Apprendre la guitare" /></label>
+        <label>Description <textarea bind:value={newQuete.description} placeholder="Optionnel" rows={2}></textarea></label>
+
+        <span class="type-label">Type</span>
+        <div class="type-cards">
+            <button type="button"
+                class="type-card" class:selected={newQuete.type === 'principale'}
+                onclick={() => newQuete.type = 'principale'}>
+                <span class="type-card-icon">🎯</span>
+                <span class="type-card-nom">Principale</span>
+                <span class="type-card-hint">objectif &gt; 6 mois</span>
+            </button>
+            <button type="button"
+                class="type-card" class:selected={newQuete.type === 'secondaire'}
+                onclick={() => newQuete.type = 'secondaire'}>
+                <span class="type-card-icon">🗺️</span>
+                <span class="type-card-nom">Secondaire</span>
+                <span class="type-card-hint">objectif &lt; 6 mois</span>
+            </button>
+        </div>
+
+        <label>XP récompense <input type="number" bind:value={newQuete.exp_recompense} min={0} /></label>
+        <label>Gold récompense <input type="number" bind:value={newQuete.gold_recompense} min={0} /></label>
+        <label>Titre personnalisé <input bind:value={newQuete.titre_recompense} placeholder="Laisser vide si aucun" /></label>
+
+        <div class="etapes-section">
+            <span class="etapes-label">Étapes (optionnel)</span>
+            <p class="info-fixe">Chaque étape donne {nouvellesEtapes.length > 0 ? `1/${nouvellesEtapes.length} de 50%` : '—'} des récompenses. La complétion donne {nouvellesEtapes.length > 0 ? '50%' : '100%'} restant.</p>
+            <div class="etape-input-row">
+                <input bind:value={nouvelleEtapeInput} placeholder="Nom de l'étape" onkeydown={(e) => { if (e.key === 'Enter') ajouterEtape(); }} />
+                <button class="btn-add-etape" onclick={ajouterEtape}>+</button>
+            </div>
+            {#each nouvellesEtapes as e, i}
+            <div class="etape-preview">
+                <span>☐ {e}</span>
+                <button class="btn-del-etape" onclick={() => retirerEtape(i)}>✕</button>
+            </div>
+            {/each}
+        </div>
+
+        <div class="modale-actions">
+            <button class="btn-cancel" onclick={() => showModalQuete = false}>Annuler</button>
+            <button class="btn-ok" onclick={soumettreQuete} disabled={!newQuete.nom.trim()}>Créer</button>
         </div>
     </div>
 </div>
@@ -422,6 +679,110 @@
 
 <style>
     .tasks { color: #eee; font-family: var(--font); }
+
+    /* Tabs */
+    .tabs {
+        display: flex; gap: 4px; margin-bottom: 16px;
+        border-bottom: 1px solid #333; padding-bottom: 0;
+    }
+    .tab-btn {
+        background: transparent; color: #888; border: none;
+        padding: 6px 12px; cursor: pointer; font-size: 0.82rem;
+        font-family: var(--font); border-bottom: 2px solid transparent;
+        margin-bottom: -1px; transition: color 0.15s;
+    }
+    .tab-btn:hover { color: #ccc; }
+    .tab-btn.active { color: #e94560; border-bottom-color: #e94560; font-weight: bold; }
+
+    /* Quêtes */
+    .quete-type-label { color: #aaa; font-size: 0.82rem; text-transform: uppercase; margin: 0 0 8px; }
+    .quete-card {
+        background: #1a1a3e; border: 1px solid #3a3a6e;
+        border-radius: 8px; padding: 12px 14px; margin-bottom: 10px;
+        display: flex; flex-direction: column; gap: 8px;
+    }
+    .quete-header { display: flex; justify-content: space-between; align-items: flex-start; gap: 8px; }
+    .quete-actions { display: flex; gap: 6px; flex-shrink: 0; }
+    .quete-desc { font-size: 0.78rem; color: #888; margin: 0; }
+    .quete-rewards { font-size: 0.75rem; color: #aaa; display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+    .quete-titre-badge { color: #f39c12; font-weight: bold; }
+    .btn-sm { padding: 3px 8px; font-size: 0.78rem; }
+
+    /* Barre de progression */
+    .quete-progress { display: flex; align-items: center; gap: 8px; }
+    .progress-bar { flex: 1; height: 6px; background: #333; border-radius: 4px; overflow: hidden; }
+    .progress-fill { height: 100%; background: #9b59b6; border-radius: 4px; transition: width 0.3s; }
+    .progress-label { font-size: 0.72rem; color: #888; flex-shrink: 0; }
+
+    /* Étapes */
+    .etapes-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 4px; }
+    .etape { display: flex; align-items: center; gap: 8px; font-size: 0.82rem; }
+    .etape-check {
+        background: transparent; border: none; cursor: pointer;
+        font-size: 1rem; color: #9b59b6; padding: 0; line-height: 1;
+        flex-shrink: 0;
+    }
+    .etape-check.done { color: #2ecc71; cursor: default; }
+    .etape-nom { flex: 1; }
+    .etape-nom.done { color: #555; text-decoration: line-through; }
+    .etape-gain { font-size: 0.70rem; color: #9b59b6; flex-shrink: 0; }
+
+    /* Modal quête */
+    textarea {
+        background: #0f3460; color: white; border: 1px solid #333;
+        border-radius: 4px; padding: 6px; font-size: 0.9rem;
+        font-family: var(--font); resize: vertical;
+    }
+    .type-label { font-size: 0.85rem; color: #aaa; }
+    .type-cards { display: flex; gap: 8px; width: 100%; }
+    .type-card {
+        flex: 1; min-width: 0;
+        display: flex; flex-direction: column; align-items: center; gap: 3px;
+        background: #0f3460; border: 2px solid #333; border-radius: 8px;
+        padding: 10px 4px; cursor: pointer; font-family: var(--font);
+        transition: border-color 0.15s, background 0.15s, transform 0.12s;
+    }
+    .type-card:hover { border-color: #666; }
+    .type-card.selected {
+        border-color: #e94560; background: #1a1a3e;
+        transform: scale(1.04);
+    }
+    .type-card-icon { font-size: 1.3rem; }
+    .type-card-nom { font-size: 0.85rem; font-weight: bold; color: #eee; }
+    .type-card-hint { font-size: 0.68rem; color: #666; }
+    .etapes-section { display: flex; flex-direction: column; gap: 6px; }
+    .etapes-label { font-size: 0.85rem; color: #aaa; }
+    .etape-input-row { display: flex; gap: 6px; }
+    .etape-input-row input { flex: 1; min-width: 0; }
+
+    /* Inline add étape on card */
+    .etape-inline-row { display: flex; gap: 6px; margin-top: 4px; }
+    .etape-inline-input {
+        flex: 1; min-width: 0;
+        background: #0a1628; color: #ccc; border: 1px solid #333;
+        border-radius: 4px; padding: 4px 6px; font-size: 0.78rem;
+        font-family: var(--font);
+    }
+    .etape-inline-input::placeholder { color: #444; }
+    .btn-add-etape-inline {
+        background: #3a3a6e; color: #9b59b6; border: 1px solid #9b59b6;
+        border-radius: 4px; padding: 2px 8px; cursor: pointer;
+        font-size: 1rem; line-height: 1; flex-shrink: 0;
+    }
+    .btn-add-etape-inline:hover { background: #9b59b6; color: white; }
+    .btn-add-etape {
+        background: #9b59b6; color: white; border: none;
+        border-radius: 4px; padding: 4px 10px; cursor: pointer; font-size: 1rem;
+    }
+    .etape-preview {
+        display: flex; justify-content: space-between; align-items: center;
+        font-size: 0.82rem; color: #ccc; background: #0f3460;
+        border-radius: 4px; padding: 4px 8px;
+    }
+    .btn-del-etape {
+        background: transparent; border: none; color: #e74c3c;
+        cursor: pointer; font-size: 0.85rem; padding: 0;
+    }
 
     .streak-bar {
         display: flex; align-items: center; gap: 5px;
