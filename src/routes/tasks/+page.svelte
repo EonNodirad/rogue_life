@@ -355,11 +355,11 @@
         <h2>Routines</h2>
         <button class="btn-add" onclick={() => ouvrirModale('routine')}>+</button>
     </div>
-    {#if streakActuel > 0}
+    {#if routines.length > 0}
     <div class="streak-bar">
-        <span class="streak-feu">🔥</span>
+        <span class="streak-feu">{streakActuel > 0 ? '🔥' : '💤'}</span>
         <span class="streak-val">{streakActuel}j</span>
-        {#if streakRecord > streakActuel}<span class="streak-rec">· rec:{streakRecord}j</span>{/if}
+        {#if streakRecord > streakActuel && streakRecord > 0}<span class="streak-rec">· rec:{streakRecord}j</span>{/if}
         {#if streakActuel < 7}
         <span class="streak-hint">— lootbox à {7 - streakActuel}j</span>
         {:else}

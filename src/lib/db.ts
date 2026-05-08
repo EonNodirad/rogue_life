@@ -521,25 +521,37 @@ export async function regenMana(personnage_id: number, montant: number): Promise
 
 export async function checkDailyPenalties(personnage_id: number): Promise<{ gameOver: boolean }> {
     await getDb();
-    const today     = new Date().toISOString().split('T')[0];
-    const yesterday = new Date(Date.now() - 86400000).toISOString().split('T')[0];
+    const today = new Date().toISOString().split('T')[0];
 
     const p = dbSelect<Personnage>('SELECT * FROM personnage WHERE id = $1', [personnage_id])[0];
     if (!p) return { gameOver: false };
 
     if ((p as any).dernier_check === today) return { gameOver: false };
 
-    // 1. Routines non faites hier
-    const routines = dbSelect<tache>(
-        `SELECT * FROM tache WHERE type = 'routine' AND (date_creation IS NULL OR date(date_creation) <= $1)`,
-        [yesterday]
-    );
-    for (const r of routines) {
-        const done = dbSelect<{ id: number }>(
-            `SELECT id FROM historique_activite WHERE personnage_id = $1 AND tache_id = $2 AND statut IN ('succes', 'penalite') AND date(date_action) = $3`,
-            [personnage_id, r.id, yesterday]
+    // 1. Routines : tous les jours depuis dernier_check+1 jusqu'à hier inclus
+    const dernierCheck: string = (p as any).dernier_check ?? '';
+    const joursAVerifier: string[] = [];
+    // start = dernier_check (pas +1) : quand la fonction a tourné le jour D, elle a vérifié D-1.
+    // Donc D lui-même n'a jamais été vérifié et doit l'être maintenant.
+    const startDate = dernierCheck ? new Date(dernierCheck) : new Date(today);
+    const endDate = new Date(today);
+    endDate.setDate(endDate.getDate() - 1);
+    for (const cur = new Date(startDate); cur <= endDate; cur.setDate(cur.getDate() + 1)) {
+        joursAVerifier.push(cur.toISOString().split('T')[0]);
+    }
+
+    for (const jour of joursAVerifier) {
+        const routinesDuJour = dbSelect<tache>(
+            `SELECT * FROM tache WHERE type = 'routine' AND (date_creation IS NULL OR date(date_creation) <= $1)`,
+            [jour]
         );
-        if (done.length === 0) {
+        for (const r of routinesDuJour) {
+            const done = dbSelect<{ id: number }>(
+                `SELECT id FROM historique_activite WHERE personnage_id = $1 AND tache_id = $2 AND statut IN ('succes', 'penalite') AND date(date_action) = $3`,
+                [personnage_id, r.id, jour]
+            );
+            if (done.length > 0) continue;
+
             const mode = p.mode ?? 'normal';
             if (mode === 'cauchemar') {
                 dbRun(
@@ -569,6 +581,16 @@ export async function checkDailyPenalties(personnage_id: number): Promise<{ game
                     [personnage_id, r.id, r.nom]
                 );
             }
+        }
+        // Vérifier game over après chaque jour (normal/hard)
+        const caRows = dbSelect<{ pv_vie_actuels: number }>(
+            'SELECT pv_vie_actuels FROM caracteristique WHERE id = $1', [p.caracteristique_id]
+        );
+        if ((caRows[0]?.pv_vie_actuels ?? 1) <= 0) {
+            dbRun(`UPDATE personnage SET dernier_check = $1 WHERE id = $2`, [today, personnage_id]);
+            await saveDb();
+            await gameOver(personnage_id);
+            return { gameOver: true };
         }
     }
 
